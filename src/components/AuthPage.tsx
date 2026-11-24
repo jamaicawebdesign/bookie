@@ -783,7 +783,7 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
                     {mode === 'login'
                       ? 'Sign In to Workspace'
                       : mode === 'signup'
-                        ? 'Create Free Account'
+                        ? 'Create Account'
                         : mode === 'update-password'
                           ? 'Update Password'
                           : 'Send Reset Link'}

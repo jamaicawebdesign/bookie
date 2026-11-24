@@ -16,6 +16,8 @@ import {
   Lock,
   ClipboardCheck,
   Phone,
+  DatabaseBackup,
+  UserCheck,
 } from 'lucide-react';
 import heroDashboardImg from '../assets/images/hero_bookkeeping_dashboard_1795317507415.jpg';
 import invoicingAgingImg from '../assets/images/feature_invoicing_aging_1795317508378.jpg';
@@ -244,7 +246,7 @@ const SERVICE_PACKAGES: ServicePackage[] = [
     priceUsd: '$0',
     priceJmd: 'J$0',
     cadence: 'Free starter plan',
-    ctaLabel: 'Start Free Workspace',
+    ctaLabel: 'Get Started',
     ctaMode: 'workspace',
     features: [
       'Double-entry Chart of Accounts & General Ledger',
@@ -308,6 +310,33 @@ const TRUST_PILLARS = [
     title: 'Built for Jamaican & Remote Small Businesses',
     detail:
       'Designed around local G.C.T. workflows, JMD and USD reporting, and fast communication so you always have clear answers without accounting jargon.',
+  },
+];
+
+const TRUST_SECURITY_ITEMS = [
+  {
+    number: '01.',
+    icon: Lock,
+    title: 'Data Encryption',
+    description:
+      'Your ledgers, invoices, and bank statement imports are encrypted in transit and stored in user-isolated PostgreSQL databases protected by row-level access policies.',
+    spec: 'Protocol · Encrypted Transfer & Row-Level Security',
+  },
+  {
+    number: '02.',
+    icon: DatabaseBackup,
+    title: 'Daily Backups',
+    description:
+      'Automated daily cloud backups protect your accounting history against hardware failure, alongside instant one-click CSV, JSON, and PDF ledger exports whenever you need them.',
+    spec: 'Cadence · Automated Daily Snapshots + Portable Exports',
+  },
+  {
+    number: '03.',
+    icon: UserCheck,
+    title: 'Professional Confidentiality',
+    description:
+      'Every bank statement, payroll summary, client directory, and tax filing is handled under strict confidentiality standards with least-privilege workspace access.',
+    spec: 'Standard · Strict Non-Disclosure & Private Workspace Access',
   },
 ];
 
@@ -621,7 +650,7 @@ export function LandingPage({
               onClick={onGetStarted}
               className="hidden sm:inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              Start Free
+              Get Started
               <ArrowRight size={15} />
             </button>
 
@@ -680,7 +709,7 @@ export function LandingPage({
                 onClick={onGetStarted}
                 className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-500 rounded-lg"
               >
-                Start Free
+                Get Started
               </button>
             </div>
           </div>
@@ -740,7 +769,7 @@ export function LandingPage({
                       onClick={onGetStarted}
                       className="inline-flex items-center gap-1.5 px-5 py-3.5 bg-white hover:bg-slate-100 text-black border border-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      Create Free Workspace
+                      Get Started
                       <ChevronRight size={16} />
                     </button>
                   )}
@@ -1560,6 +1589,65 @@ export function LandingPage({
           </div>
         </section>
 
+        {/* Trust & Security Section */}
+        <section id="security" className="py-20 lg:py-24 bg-white border-t border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-12">
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
+                  Trust &amp; Security
+                </p>
+                <h2
+                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  Your financial records stay encrypted, backed up, and strictly confidential.
+                </h2>
+              </div>
+              <p className="text-sm text-black max-w-md leading-relaxed">
+                Small business owners trust us with sensitive bank, payroll, and tax records—every
+                layer of Island Bookkeeping is structured to protect your privacy.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {TRUST_SECURITY_ITEMS.map((item) => {
+                const IconComponent = item.icon;
+                return (
+                  <article
+                    key={item.number}
+                    className="bg-slate-50 border border-slate-200 rounded-2xl p-7 flex flex-col justify-between gap-6"
+                  >
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="w-11 h-11 rounded-xl bg-black text-white flex items-center justify-center shrink-0">
+                          <IconComponent size={20} className="text-emerald-400" />
+                        </div>
+                        <span className="text-xs font-mono font-bold text-brand-700">
+                          {item.number}
+                        </span>
+                      </div>
+
+                      <h3
+                        className="text-xl font-extrabold text-black tracking-tight"
+                        style={{ fontFamily: 'var(--font-display)' }}
+                      >
+                        {item.title}
+                      </h3>
+
+                      <p className="text-sm text-black leading-relaxed">{item.description}</p>
+                    </div>
+
+                    <p className="pt-4 border-t border-slate-200 text-xs font-semibold text-brand-700">
+                      {item.spec}
+                    </p>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
         {/* Interactive Bookkeeping ROI & Time-Saved Calculator */}
         <section id="calculator" className="py-20 lg:py-24 bg-slate-950 text-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -1895,7 +1983,7 @@ export function LandingPage({
                             onClick={onGetStarted}
                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                           >
-                            Open Free Cloud Workspace
+                            Get Started in Workspace
                             <ArrowRight size={14} />
                           </button>
                           <a
@@ -2159,7 +2247,7 @@ export function LandingPage({
                   onClick={onGetStarted}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                 >
-                  Start Free Workspace
+                  Get Started
                   <ArrowRight size={14} />
                 </button>
               </div>
@@ -2263,7 +2351,16 @@ export function LandingPage({
                     onClick={() => scrollToSection('about')}
                     className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
                   >
-                    About & Confidentiality
+                    About Island Bookkeeping
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => scrollToSection('security')}
+                    className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
+                  >
+                    Trust &amp; Security
                   </button>
                 </li>
                 <li>
