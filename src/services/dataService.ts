@@ -443,7 +443,19 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
     runCloudSync(async (client, userId) => {
-      await client.from("transactions").upsert({ ...record, user_id: userId });
+      const { error } = await client.from("transactions").upsert({
+        id: record.id,
+        user_id: userId,
+        date: record.date,
+        region: record.region,
+        category: record.category,
+        revenue: Number(record.revenue || 0),
+        cost: Number(record.cost || 0),
+        profit: Number(record.profit || 0),
+        customers: Number(record.customers || 0),
+        status: record.status,
+      });
+      if (error) throw error;
     });
   },
 
@@ -453,7 +465,8 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filtered));
 
     runCloudSync(async (client, userId) => {
-      await client.from("transactions").delete().eq("user_id", userId).eq("id", id);
+      const { error } = await client.from("transactions").delete().eq("user_id", userId).eq("id", id);
+      if (error) throw error;
     });
   },
 

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   ArrowRight,
   Check,
@@ -11,6 +11,11 @@ import {
   Clock,
   ShieldCheck,
   ArrowUpRight,
+  MessageCircle,
+  Calendar,
+  Lock,
+  ClipboardCheck,
+  Phone,
 } from 'lucide-react';
 import heroDashboardImg from '../assets/images/hero_bookkeeping_dashboard_1795317507415.jpg';
 import invoicingAgingImg from '../assets/images/feature_invoicing_aging_1795317508378.jpg';
@@ -188,22 +193,215 @@ const CLIENT_OUTCOMES = [
   },
 ];
 
+const OWNER_BENEFITS = [
+  {
+    number: '01.',
+    title: 'More time for business owners',
+    detail: 'Stop spending evenings sorting receipts or fixing spreadsheets—reclaim hours every week.',
+  },
+  {
+    number: '02.',
+    title: 'Better financial organization',
+    detail: 'Keep every invoice, vendor bill, bank statement, and tax record structured in one place.',
+  },
+  {
+    number: '03.',
+    title: 'Accurate bookkeeping records',
+    detail: 'Balanced double-entry posting ensures your debits, credits, and accounts reconcile cleanly.',
+  },
+  {
+    number: '04.',
+    title: 'Clearer business performance',
+    detail: 'Understand cash flow, profit margins, and overdue client balances before decisions hurt.',
+  },
+  {
+    number: '05.',
+    title: 'Less stress at tax time',
+    detail: 'Walk into G.C.T. filings and year-end reviews with clean statements ready for your CPA.',
+  },
+];
+
+interface ServicePackage {
+  id: string;
+  number: string;
+  name: string;
+  tagline: string;
+  priceUsd: string;
+  priceJmd: string;
+  cadence: string;
+  recommended?: boolean;
+  ctaLabel: string;
+  ctaMode: 'workspace' | 'consultation' | 'onboarding';
+  features: string[];
+}
+
+const SERVICE_PACKAGES: ServicePackage[] = [
+  {
+    id: 'starter',
+    number: '01.',
+    name: 'Self-Managed Workspace',
+    tagline: 'For solo founders who prefer to manage their own books using structured cloud software.',
+    priceUsd: '$0',
+    priceJmd: 'J$0',
+    cadence: 'Free starter plan',
+    ctaLabel: 'Start Free Workspace',
+    ctaMode: 'workspace',
+    features: [
+      'Double-entry Chart of Accounts & General Ledger',
+      'G.C.T.-ready client invoicing & payment tracking',
+      'Automated CSV & JSON bank statement cleaner',
+      'Instant Income Statement, Balance Sheet & Trial Balance',
+    ],
+  },
+  {
+    id: 'growth',
+    number: '02.',
+    name: 'Monthly Core Bookkeeping',
+    tagline: 'For growing small businesses wanting accurate monthly books handled by specialists.',
+    priceUsd: 'From $149',
+    priceJmd: 'From J$23,500',
+    cadence: 'per month · transparent volume pricing',
+    recommended: true,
+    ctaLabel: 'Book Free Consultation',
+    ctaMode: 'consultation',
+    features: [
+      'Up to 250 monthly bank & card transactions reconciled',
+      'G.C.T. input/output summary & filing prep schedule',
+      'Monthly Profit & Loss, Balance Sheet & AR/AP aging review',
+      'Full Island Bookkeeping cloud workspace & WhatsApp access',
+    ],
+  },
+  {
+    id: 'executive',
+    number: '03.',
+    name: 'Full-Service & Advisory',
+    tagline: 'For active multi-account companies needing weekly close, payables tracking, and catch-up support.',
+    priceUsd: 'From $349',
+    priceJmd: 'From J$55,000',
+    cadence: 'per month · custom multi-entity scope',
+    ctaLabel: 'Start Client Onboarding',
+    ctaMode: 'onboarding',
+    features: [
+      'Unlimited reconciliations across bank, POS & eCommerce feeds',
+      'Weekly cash-flow snapshot & vendor bill scheduling',
+      'Catch-up bookkeeping & direct coordination with your auditor',
+      'Dedicated bookkeeper with priority WhatsApp & call check-ins',
+    ],
+  },
+];
+
+const TRUST_PILLARS = [
+  {
+    number: '01.',
+    title: 'Strict Confidentiality & Access Control',
+    detail:
+      'Every client ledger is isolated with row-level database access controls so only authorized owners and assigned bookkeepers see your numbers.',
+  },
+  {
+    number: '02.',
+    title: 'Accountant-Verified Double-Entry Accuracy',
+    detail:
+      'We enforce true debit-and-credit parity across every transaction, ensuring your Trial Balance, P&L, and Balance Sheet hold up under tax or bank scrutiny.',
+  },
+  {
+    number: '03.',
+    title: 'Built for Jamaican & Remote Small Businesses',
+    detail:
+      'Designed around local G.C.T. workflows, JMD and USD reporting, and fast communication so you always have clear answers without accounting jargon.',
+  },
+];
+
+interface BookkeepingService {
+  number: string;
+  title: string;
+  scope: string;
+  description: string;
+  deliverable: string;
+}
+
+const MAJOR_SERVICES: BookkeepingService[] = [
+  {
+    number: '01.',
+    title: 'Monthly Bookkeeping',
+    scope: 'Ongoing Ledger Care · Transaction Categorization',
+    description:
+      'We record, classify, and verify your day-to-day income, operating expenses, and receipts every month so your books stay accurate without late-night spreadsheet work.',
+    deliverable: 'Clean monthly general ledger & categorized expense log',
+  },
+  {
+    number: '02.',
+    title: 'Bank and Account Reconciliations',
+    scope: 'Chequing · Savings · Credit Cards · Merchant Feeds',
+    description:
+      'Every deposit, withdrawal, card settlement, and bank fee is matched line-by-line against your bank statements so missing transactions and duplicate entries are caught immediately.',
+    deliverable: 'Reconciled closing balances across all business accounts',
+  },
+  {
+    number: '03.',
+    title: 'Accounts Payable and Receivable',
+    scope: 'Customer Invoicing · Vendor Bills · Aging Controls',
+    description:
+      'Stay on top of who owes you money and which supplier bills are due next. We track partial client payments, overdue receivables, and scheduled vendor payouts in one place.',
+    deliverable: 'Weekly AR & AP aging schedules with payment status tracking',
+  },
+  {
+    number: '04.',
+    title: 'Financial Statements',
+    scope: 'Income Statement · Balance Sheet · Trial Balance',
+    description:
+      'Receive balanced, double-entry financial statements formatted cleanly for your accountant, lender, or board review—removing guesswork when applying for credit or filing taxes.',
+    deliverable: 'Audit-ready P&L, Balance Sheet & Trial Balance (PDF / CSV)',
+  },
+  {
+    number: '05.',
+    title: 'Payroll Support',
+    scope: 'Wage Schedules · Statutory Deductions · Ledger Posting',
+    description:
+      'Keep employee salaries, contractor payouts, and statutory payroll obligations organized and properly reflected in your expense and liability accounts every pay cycle.',
+    deliverable: 'Structured payroll journal posting & deduction summaries',
+  },
+  {
+    number: '06.',
+    title: 'Catch-Up Bookkeeping',
+    scope: 'Historical Cleanup · Backlog Reconciliation',
+    description:
+      'Fallen behind by a few months or an entire fiscal year? We clean up uncategorized bank exports, resolve mixed receipts, and bring overdue books completely up to date.',
+    deliverable: 'Reconciled prior-period ledger ready for tax compliance',
+  },
+  {
+    number: '07.',
+    title: 'Small Business Financial Reporting',
+    scope: 'Cash Flow · Profit Margins · Executive Summaries',
+    description:
+      'Go beyond raw numbers with plain-English monthly reporting on profit margins, burn rate, seasonal revenue trends, and cash runway so you can make smarter business decisions.',
+    deliverable: 'Monthly owner performance brief & margin variance highlights',
+  },
+];
+
 const FAQS = [
   {
+    q: 'How do you keep my business financial records confidential?',
+    a: 'All cloud records are encrypted in transit and protected by user-scoped row-level security. We treat every bank statement, payroll figure, and client list with strict professional confidentiality.',
+  },
+  {
+    q: 'What if my bookkeeping is months behind or stuck in spreadsheets?',
+    a: 'That is our most common starting point. During onboarding, we clean your historical CSV or Excel files, reconcile missing months, and bring your books current so you start fresh.',
+  },
+  {
     q: 'Does Island Bookkeeping enforce true double-entry accounting?',
-    a: 'Yes. Every journal entry, paid invoice, and vendor bill writes balanced debit and credit lines against your Chart of Accounts (Assets, Liabilities, Equity, Revenue, and Expenses), ensuring your Trial Balance always stays in equilibrium.',
+    a: 'Yes. Every journal entry, paid invoice, and vendor bill writes balanced debit and credit lines against your Chart of Accounts (Assets, Liabilities, Equity, Revenue, and Expenses).',
   },
   {
     q: 'Can I customize G.C.T. or regional sales tax rates?',
-    a: 'Yes. You can set your default G.C.T. percentage (such as 15% or 0% zero-rated) in workspace settings and override tax rules per invoice or line item.',
+    a: 'Yes. You can set your default G.C.T. percentage (such as 15% or 0% zero-rated) in workspace settings and track output tax cleanly on every invoice.',
   },
   {
-    q: 'How does the CSV and JSON statement cleaner work?',
-    a: 'When you import raw bank or POS exports, the Data Cleaner detects formatting inconsistencies, strips currency symbols, removes duplicate transactions, standardizes dates, and previews clean rows before committing to your ledger.',
+    q: 'How does pricing work if my transaction volume grows?',
+    a: 'You never face surprise bills. During your free consultation, we confirm a flat monthly tier based on bank account count and transaction volume, and notify you in advance before any tier change.',
   },
   {
-    q: 'Is my bookkeeping data backed up securely in the cloud?',
-    a: 'Your workspace supports full Supabase PostgreSQL cloud synchronization with row-level authentication, alongside instant local CSV and JSON exports so you always retain complete ownership of your books.',
+    q: 'Can I use the software on my own without hiring a monthly bookkeeper?',
+    a: 'Yes. You can create a free Self-Managed Workspace anytime to issue invoices, clean CSV statements, and generate balanced financial statements yourself.',
   },
 ];
 
@@ -216,16 +414,41 @@ export function LandingPage({
   const [activeModuleId, setActiveModuleId] = useState<string>('overview');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [pricingCurrency, setPricingCurrency] = useState<'USD' | 'JMD'>('USD');
+
+  useEffect(() => {
+    const currentUrl = `${window.location.origin}${window.location.pathname}`;
+    const absoluteImageUrl = `${window.location.origin}/og-cover.jpg`;
+
+    const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]');
+    if (canonical) canonical.href = currentUrl;
+
+    const ogUrl = document.querySelector<HTMLMetaElement>('meta[property="og:url"]');
+    if (ogUrl) ogUrl.content = currentUrl;
+
+    const ogImage = document.querySelector<HTMLMetaElement>('meta[property="og:image"]');
+    if (ogImage) ogImage.content = absoluteImageUrl;
+
+    const twitterImage = document.querySelector<HTMLMetaElement>('meta[name="twitter:image"]');
+    if (twitterImage) twitterImage.content = absoluteImageUrl;
+  }, []);
 
   // Interactive ROI / Close-Time Calculator state
   const [monthlyInvoices, setMonthlyInvoices] = useState<number>(85);
   const [monthlyBankLines, setMonthlyBankLines] = useState<number>(420);
   const [hourlyRate, setHourlyRate] = useState<number>(55);
 
-  // Onboarding / Consultation inquiry form state
+  // Consultation & Client Onboarding form state
+  const [contactTab, setContactTab] = useState<'consultation' | 'onboarding'>('consultation');
+  const [selectedPackage, setSelectedPackage] = useState<string>('Monthly Core Bookkeeping');
   const [inquiryName, setInquiryName] = useState('');
+  const [inquiryBusiness, setInquiryBusiness] = useState('');
   const [inquiryEmail, setInquiryEmail] = useState('');
+  const [inquiryPhone, setInquiryPhone] = useState('');
   const [inquiryVolume, setInquiryVolume] = useState('50 – 250 transactions / mo');
+  const [inquiryCurrentSetup, setInquiryCurrentSetup] = useState('Excel / Spreadsheets');
+  const [inquiryPreferredTime, setInquiryPreferredTime] = useState('Morning (9:00 AM – 12:00 PM)');
+  const [inquiryNotes, setInquiryNotes] = useState('');
   const [inquiryError, setInquiryError] = useState<string | null>(null);
   const [inquirySubmitted, setInquirySubmitted] = useState(false);
 
@@ -244,18 +467,74 @@ export function LandingPage({
     setFailedImages((prev) => ({ ...prev, [key]: true }));
   };
 
+  const selectPackageAndScroll = (pkgName: string, mode: 'consultation' | 'onboarding') => {
+    setSelectedPackage(pkgName);
+    setContactTab(mode);
+    setInquirySubmitted(false);
+    setInquiryError(null);
+    scrollToSection('contact');
+  };
+
+  const selectServiceAndEnquire = (serviceTitle: string) => {
+    setSelectedPackage(serviceTitle);
+    setContactTab('consultation');
+    setInquirySubmitted(false);
+    setInquiryError(null);
+    setInquiryNotes((prev) =>
+      prev.trim() && !prev.startsWith('Interested in ')
+        ? prev
+        : `Interested in ${serviceTitle} for our business.`
+    );
+    scrollToSection('contact');
+  };
+
+  const getWhatsAppHref = () => {
+    const summaryParts = [
+      'Hello Island Bookkeeping, I would like to enquire about',
+      selectedPackage,
+      inquiryBusiness.trim() ? `for ${inquiryBusiness.trim()}` : '',
+      inquiryName.trim() ? `(Contact: ${inquiryName.trim()})` : '',
+    ].filter(Boolean);
+    return `https://wa.me/?text=${encodeURIComponent(summaryParts.join(' '))}`;
+  };
+
   const handleInquirySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setInquiryError(null);
 
     if (!inquiryName.trim()) {
-      setInquiryError('Please enter your name or company contact.');
+      setInquiryError('Please enter your full name.');
       return;
     }
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(inquiryEmail.trim())) {
-      setInquiryError('Please enter a valid work email address.');
+      setInquiryError('Please enter a valid email address.');
       return;
+    }
+    if (!inquiryPhone.trim() || inquiryPhone.trim().length < 7) {
+      setInquiryError('Please enter a phone or WhatsApp number so we can reach you.');
+      return;
+    }
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('island_lead_inquiries') || '[]');
+      const record = {
+        id: `LEAD-${Date.now()}`,
+        type: contactTab,
+        package: selectedPackage,
+        name: inquiryName.trim(),
+        business: inquiryBusiness.trim(),
+        email: inquiryEmail.trim(),
+        phone: inquiryPhone.trim(),
+        volume: inquiryVolume,
+        currentSetup: inquiryCurrentSetup,
+        preferredTime: inquiryPreferredTime,
+        notes: inquiryNotes.trim(),
+        submittedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('island_lead_inquiries', JSON.stringify([record, ...existing].slice(0, 20)));
+    } catch {
+      // Non-fatal storage fallback
     }
 
     setInquirySubmitted(true);
@@ -300,6 +579,13 @@ export function LandingPage({
           >
             <button
               type="button"
+              onClick={() => scrollToSection('services')}
+              className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Services
+            </button>
+            <button
+              type="button"
               onClick={() => scrollToSection('dashboards')}
               className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
             >
@@ -307,24 +593,17 @@ export function LandingPage({
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('capabilities')}
+              onClick={() => scrollToSection('packages')}
               className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
             >
-              Capabilities
+              Packages
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('workflow')}
+              onClick={() => scrollToSection('about')}
               className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
             >
-              Workflow
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('calculator')}
-              className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
-            >
-              ROI Calculator
+              About
             </button>
             <button
               type="button"
@@ -362,6 +641,13 @@ export function LandingPage({
           <div className="md:hidden border-t border-white/15 bg-black px-4 py-4 space-y-2">
             <button
               type="button"
+              onClick={() => scrollToSection('services')}
+              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
+            >
+              Services
+            </button>
+            <button
+              type="button"
               onClick={() => scrollToSection('dashboards')}
               className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
             >
@@ -369,24 +655,17 @@ export function LandingPage({
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('capabilities')}
+              onClick={() => scrollToSection('packages')}
               className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
             >
-              Capabilities
+              Packages
             </button>
             <button
               type="button"
-              onClick={() => scrollToSection('workflow')}
+              onClick={() => scrollToSection('about')}
               className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
             >
-              Workflow
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('calculator')}
-              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
-            >
-              ROI Calculator
+              About
             </button>
             <div className="pt-3 border-t border-white/15 flex items-center gap-3">
               <button
@@ -416,32 +695,34 @@ export function LandingPage({
               {/* Left Narrative Column */}
               <div className="lg:col-span-5 space-y-7">
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
-                  Double-Entry Accounting · G.C.T. Ready · Cloud Synced
+                  Confidential Bookkeeping · G.C.T. Ready · Cloud Ledger
                 </p>
 
                 <h1
-                  className="text-black font-extrabold tracking-tight leading-[1.05] text-balance"
+                  className="text-black font-extrabold tracking-tight leading-[1.08] text-balance"
                   style={{
                     fontFamily: 'var(--font-display)',
-                    fontSize: 'clamp(2.35rem, 4.1vw, 3.65rem)',
+                    fontSize: 'clamp(2.1rem, 3.5vw, 3.25rem)',
                   }}
                 >
-                  Close your books in hours, not weeks.
+                  Focus on Growing Your Business. We&apos;ll Handle the Numbers.
                 </h1>
 
                 <p className="text-base sm:text-lg text-black leading-relaxed max-w-xl">
-                  Island Bookkeeping brings double-entry ledgers, G.C.T.-compliant invoicing,
-                  statement CSV cleaning, and live profit reporting into one focused workspace built
-                  for Caribbean and global remote businesses.
+                  Professional, reliable bookkeeping services designed to help small businesses stay
+                  organized, understand their finances, and make smarter business decisions.
                 </p>
 
                 <div className="flex flex-wrap items-center gap-4 pt-1">
                   <button
                     type="button"
-                    onClick={onGetStarted}
+                    onClick={() => {
+                      setContactTab('consultation');
+                      scrollToSection('contact');
+                    }}
                     className="inline-flex items-center gap-2.5 px-6 py-3.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
                   >
-                    Create Free Workspace
+                    Book Free Consultation
                     <ArrowRight size={16} />
                   </button>
 
@@ -456,21 +737,21 @@ export function LandingPage({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => scrollToSection('dashboards')}
-                      className="inline-flex items-center gap-1.5 px-2 py-3 text-sm font-semibold text-black hover:text-brand-600 transition-colors cursor-pointer whitespace-nowrap"
+                      onClick={onGetStarted}
+                      className="inline-flex items-center gap-1.5 px-5 py-3.5 bg-white hover:bg-slate-100 text-black border border-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      Explore feature dashboards
+                      Create Free Workspace
                       <ChevronRight size={16} />
                     </button>
                   )}
                 </div>
 
                 <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-black">
-                  <span>01. Balanced General Ledger</span>
+                  <span>01. Organized Books</span>
                   <span className="text-black/40">/</span>
-                  <span>02. AR & AP Aging Controls</span>
+                  <span>02. Tax-Ready Reports</span>
                   <span className="text-black/40">/</span>
-                  <span>03. Instant PDF & CSV Statements</span>
+                  <span>03. Strict Confidentiality</span>
                 </div>
               </div>
 
@@ -557,20 +838,119 @@ export function LandingPage({
             </div>
           </div>
 
-          {/* Quantified Impact Strip */}
+          {/* Business Owner Benefits & Quantified Impact Strip */}
           <div className="bg-white border-t border-slate-200">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-2 lg:grid-cols-4 gap-8">
-              {QUANTIFIED_IMPACT.map((stat) => (
-                <div key={stat.value} className="space-y-1">
-                  <p
-                    className="text-2xl sm:text-3xl font-extrabold font-mono tabular-nums text-black tracking-tight"
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                {OWNER_BENEFITS.map((benefit) => (
+                  <div key={benefit.number} className="space-y-1.5">
+                    <span className="text-xs font-mono font-bold text-brand-700">
+                      {benefit.number}
+                    </span>
+                    <h2
+                      className="text-sm font-extrabold text-black tracking-tight"
+                      style={{ fontFamily: 'var(--font-display)' }}
+                    >
+                      {benefit.title}
+                    </h2>
+                    <p className="text-xs text-black/80 leading-relaxed">{benefit.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Core Bookkeeping Services Section */}
+        <section id="services" className="py-20 lg:py-24 bg-slate-50 border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+              {/* Left Sticky Intro Column */}
+              <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-6">
+                <div className="space-y-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+                    Bookkeeping Services
+                  </p>
+                  <h2
+                    className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
                     style={{ fontFamily: 'var(--font-display)' }}
                   >
-                    {stat.value}
+                    Focused financial support for every stage of small business growth.
+                  </h2>
+                  <p className="text-sm sm:text-base text-black leading-relaxed">
+                    Select any individual service you need—or combine them into a monthly plan.
+                    Every engagement includes clear communication, organized records, and strict
+                    confidentiality.
                   </p>
-                  <p className="text-sm text-black leading-snug">{stat.label}</p>
                 </div>
-              ))}
+
+                <div className="pt-2 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => selectServiceAndEnquire('Monthly Core Bookkeeping')}
+                    className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    Book Free Consultation
+                    <ArrowRight size={15} />
+                  </button>
+                  <div>
+                    <a
+                      href={getWhatsAppHref()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-black hover:text-brand-700 underline underline-offset-4 transition-colors"
+                    >
+                      <MessageCircle size={14} className="text-brand-600" />
+                      Prefer WhatsApp? Send a direct enquiry
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Structured Service Rows */}
+              <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-200">
+                {MAJOR_SERVICES.map((service) => (
+                  <div
+                    key={service.number}
+                    className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+                  >
+                    <div className="space-y-2 max-w-xl">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-black/75">
+                        <span className="font-mono font-bold text-brand-700">
+                          {service.number}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="font-medium">{service.scope}</span>
+                      </div>
+
+                      <h3
+                        className="text-xl font-extrabold text-black tracking-tight"
+                        style={{ fontFamily: 'var(--font-display)' }}
+                      >
+                        {service.title}
+                      </h3>
+
+                      <p className="text-sm text-black leading-relaxed">{service.description}</p>
+
+                      <p className="text-xs font-semibold text-brand-700 pt-0.5">
+                        Deliverable · {service.deliverable}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0">
+                      <button
+                        type="button"
+                        aria-label={`Enquire about ${service.title}`}
+                        onClick={() => selectServiceAndEnquire(service.title)}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-black hover:bg-brand-500 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        Enquire Now
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -914,37 +1294,268 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* Three-Step Workflow Section */}
-        <section id="workflow" className="py-20 lg:py-24 bg-white">
+        {/* Service Packages & Pricing Guidance Section */}
+        <section id="packages" className="py-20 lg:py-24 bg-white">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl mb-14">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
-                Monthly Close Rhythm
-              </p>
-              <h2
-                className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
-                style={{ fontFamily: 'var(--font-display)' }}
+            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-12">
+              <div className="max-w-2xl">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
+                  Service Packages & Pricing Guidance
+                </p>
+                <h2
+                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  Transparent plans built for every stage of your business.
+                </h2>
+                <p className="mt-3 text-sm sm:text-base text-black leading-relaxed">
+                  Use Island Bookkeeping on your own or partner with our bookkeeping team for
+                  hands-off monthly reconciliations, G.C.T. preparation, and executive reporting.
+                </p>
+              </div>
+
+              {/* Currency Guidance Toggle */}
+              <div
+                role="group"
+                aria-label="Pricing display currency"
+                className="inline-flex items-center p-1 bg-slate-100 border border-slate-200 rounded-lg self-start lg:self-auto shrink-0"
               >
-                From raw bank export to signed financial statements in three steps.
-              </h2>
+                <button
+                  type="button"
+                  onClick={() => setPricingCurrency('USD')}
+                  className={cn(
+                    'px-3.5 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0',
+                    pricingCurrency === 'USD'
+                      ? 'bg-black text-white'
+                      : 'text-black hover:bg-white/70'
+                  )}
+                >
+                  USD ($)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPricingCurrency('JMD')}
+                  className={cn(
+                    'px-3.5 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0',
+                    pricingCurrency === 'JMD'
+                      ? 'bg-black text-white'
+                      : 'text-black hover:bg-white/70'
+                  )}
+                >
+                  JMD (J$)
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 border-t border-slate-200 pt-10">
-              {WORKFLOW_STEPS.map((item) => (
-                <div key={item.step} className="space-y-4">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-brand-600 font-bold text-sm">{item.step}</span>
-                    <span className="text-black font-medium">{item.timing}</span>
-                  </div>
-                  <h3
-                    className="text-xl font-bold text-black"
-                    style={{ fontFamily: 'var(--font-display)' }}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {SERVICE_PACKAGES.map((pkg) => {
+                const displayPrice = pricingCurrency === 'USD' ? pkg.priceUsd : pkg.priceJmd;
+                return (
+                  <article
+                    key={pkg.id}
+                    className={cn(
+                      'rounded-2xl p-7 sm:p-8 flex flex-col justify-between gap-8 border',
+                      pkg.recommended
+                        ? 'bg-slate-950 text-white border-slate-900'
+                        : 'bg-slate-50 text-black border-slate-200'
+                    )}
                   >
-                    {item.title}
-                  </h3>
-                  <p className="text-sm text-black leading-relaxed">{item.detail}</p>
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono">
+                          <span className={pkg.recommended ? 'text-accent-400 font-bold' : 'text-brand-700 font-bold'}>
+                            {pkg.number}
+                          </span>
+                          {pkg.recommended && (
+                            <span className="font-sans font-semibold text-emerald-400">
+                              Most Popular · Small Business
+                            </span>
+                          )}
+                        </div>
+                        <h3
+                          className="text-xl sm:text-2xl font-extrabold tracking-tight"
+                          style={{ fontFamily: 'var(--font-display)' }}
+                        >
+                          {pkg.name}
+                        </h3>
+                        <p
+                          className={cn(
+                            'text-sm leading-relaxed',
+                            pkg.recommended ? 'text-white/85' : 'text-black/80'
+                          )}
+                        >
+                          {pkg.tagline}
+                        </p>
+                      </div>
+
+                      <div
+                        className={cn(
+                          'pt-5 border-t',
+                          pkg.recommended ? 'border-slate-800' : 'border-slate-200'
+                        )}
+                      >
+                        <p
+                          className="text-3xl font-extrabold font-mono tabular-nums tracking-tight"
+                          style={{ fontFamily: 'var(--font-display)' }}
+                        >
+                          {displayPrice}
+                        </p>
+                        <p
+                          className={cn(
+                            'text-xs mt-1',
+                            pkg.recommended ? 'text-white/75' : 'text-black/75'
+                          )}
+                        >
+                          {pkg.cadence}
+                        </p>
+                      </div>
+
+                      <ul className="space-y-3 text-sm">
+                        {pkg.features.map((feat) => (
+                          <li key={feat} className="flex items-start gap-2.5">
+                            <Check
+                              size={16}
+                              className={cn(
+                                'shrink-0 mt-0.5',
+                                pkg.recommended ? 'text-emerald-400' : 'text-brand-600'
+                              )}
+                            />
+                            <span className={pkg.recommended ? 'text-white/95' : 'text-black'}>
+                              {feat}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pkg.ctaMode === 'workspace') {
+                          onGetStarted();
+                        } else {
+                          selectPackageAndScroll(pkg.name, pkg.ctaMode);
+                        }
+                      }}
+                      className={cn(
+                        'w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-lg text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap',
+                        pkg.recommended
+                          ? 'bg-brand-500 hover:bg-brand-600 text-white'
+                          : 'bg-black hover:bg-brand-600 text-white'
+                      )}
+                    >
+                      {pkg.ctaLabel}
+                      <ArrowRight size={16} />
+                    </button>
+                  </article>
+                );
+              })}
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs text-black">
+              <p className="leading-relaxed">
+                <span className="font-bold">Pricing guidance:</span> Final monthly fees scale clearly
+                by bank account count and transaction volume—confirmed in writing after your free
+                20-minute review with no hidden setup fees.
+              </p>
+              <button
+                type="button"
+                onClick={() => selectPackageAndScroll('Custom / Catch-Up Quote', 'consultation')}
+                className="font-bold text-brand-700 hover:underline underline-offset-4 whitespace-nowrap shrink-0 cursor-pointer text-left sm:text-right"
+              >
+                Need catch-up bookkeeping? Request a custom quote
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* About the Business & Confidentiality Standards */}
+        <section id="about" className="py-20 lg:py-24 bg-slate-50 border-t border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
+              <div className="lg:col-span-5 space-y-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+                  About Island Bookkeeping
+                </p>
+                <h2
+                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  Built on trust, confidentiality, and dependable numbers.
+                </h2>
+                <p className="text-sm sm:text-base text-black leading-relaxed">
+                  Handing over your bank statements, revenue figures, and tax obligations requires
+                  complete confidence. Island Bookkeeping pairs experienced small-business
+                  bookkeeping workflows with disciplined double-entry cloud software—so owners in
+                  Jamaica and across remote teams always know where their business stands.
+                </p>
+
+                <div className="pt-2 grid grid-cols-2 gap-6 border-t border-slate-200">
+                  {QUANTIFIED_IMPACT.slice(0, 2).map((stat) => (
+                    <div key={stat.value} className="space-y-1">
+                      <p
+                        className="text-2xl font-extrabold font-mono tabular-nums text-black"
+                        style={{ fontFamily: 'var(--font-display)' }}
+                      >
+                        {stat.value}
+                      </p>
+                      <p className="text-xs text-black/80 leading-snug">{stat.label}</p>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
+
+              <div className="lg:col-span-7 divide-y divide-slate-200 border-t border-b border-slate-200 bg-white rounded-2xl px-6 sm:px-8">
+                {TRUST_PILLARS.map((pillar) => (
+                  <div key={pillar.number} className="py-6 space-y-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-mono font-bold text-brand-700">
+                        {pillar.number}
+                      </span>
+                      <h3
+                        className="text-lg font-bold text-black"
+                        style={{ fontFamily: 'var(--font-display)' }}
+                      >
+                        {pillar.title}
+                      </h3>
+                    </div>
+                    <p className="text-sm text-black leading-relaxed pl-7">{pillar.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Three-Step Close Rhythm */}
+            <div id="workflow" className="mt-16 pt-12 border-t border-slate-200">
+              <div className="max-w-2xl mb-10">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-2">
+                  Simple Onboarding & Monthly Rhythm
+                </p>
+                <h3
+                  className="text-2xl sm:text-3xl font-extrabold text-black tracking-tight text-balance"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  From scattered spreadsheets to organized monthly books in three steps.
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {WORKFLOW_STEPS.map((item) => (
+                  <div key={item.step} className="space-y-3">
+                    <div className="flex items-center justify-between text-xs font-mono">
+                      <span className="text-brand-600 font-bold text-sm">{item.step}</span>
+                      <span className="text-black font-medium">{item.timing}</span>
+                    </div>
+                    <h4
+                      className="text-lg font-bold text-black"
+                      style={{ fontFamily: 'var(--font-display)' }}
+                    >
+                      {item.title}
+                    </h4>
+                    <p className="text-sm text-black leading-relaxed">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </section>
@@ -1166,81 +1777,153 @@ export function LandingPage({
                 </div>
               </div>
 
-              {/* Lead Capture & Workspace Launch Column */}
+              {/* Free Consultation, Client Onboarding & WhatsApp Contact Column */}
               <div id="contact" className="lg:col-span-6">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-7 sm:p-9 space-y-7">
-                  <div className="space-y-3">
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-7 sm:p-9 space-y-6">
+                  <div className="space-y-2.5">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
-                      Start Your Ledger Today
+                      Get Started With Confidence
                     </p>
                     <h2
                       className="text-2xl sm:text-3xl font-extrabold text-black tracking-tight"
                       style={{ fontFamily: 'var(--font-display)' }}
                     >
-                      Launch your workspace immediately or request guided onboarding.
+                      Book a free consultation or start client onboarding.
                     </h2>
                     <p className="text-sm text-black leading-relaxed">
-                      Create an account in under a minute with cloud sync enabled, or leave your
-                      details for tailored migration from QuickBooks or Excel.
+                      Speak directly with our bookkeeping team, submit your onboarding profile, or
+                      message us instantly on WhatsApp for quick answers.
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
+                  {/* Direct WhatsApp Enquiry Banner */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-bold text-black flex items-center gap-1.5">
+                        <Phone size={14} className="text-brand-600" />
+                        Prefer a quick chat first?
+                      </p>
+                      <p className="text-xs text-black/80">
+                        Send a confidential enquiry on WhatsApp with your selected plan.
+                      </p>
+                    </div>
+                    <a
+                      href={getWhatsAppHref()}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0"
+                    >
+                      <MessageCircle size={15} />
+                      WhatsApp Enquiry
+                    </a>
+                  </div>
+
+                  {/* Consultation vs Onboarding Mode Tabs */}
+                  <div
+                    role="tablist"
+                    aria-label="Enquiry mode"
+                    className="grid grid-cols-2 p-1 bg-black rounded-xl"
+                  >
                     <button
                       type="button"
-                      onClick={onGetStarted}
-                      className="inline-flex items-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                      role="tab"
+                      aria-selected={contactTab === 'consultation'}
+                      onClick={() => {
+                        setContactTab('consultation');
+                        setInquirySubmitted(false);
+                        setInquiryError(null);
+                      }}
+                      className={cn(
+                        'inline-flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap',
+                        contactTab === 'consultation'
+                          ? 'bg-brand-500 text-white'
+                          : 'text-white/85 hover:text-white'
+                      )}
                     >
-                      Create Free Account
-                      <ArrowRight size={16} />
+                      <Calendar size={14} />
+                      Free Consultation
                     </button>
                     <button
                       type="button"
-                      onClick={onSignIn}
-                      className="inline-flex items-center gap-2 px-5 py-3 bg-white hover:bg-slate-100 text-black border border-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                      role="tab"
+                      aria-selected={contactTab === 'onboarding'}
+                      onClick={() => {
+                        setContactTab('onboarding');
+                        setInquirySubmitted(false);
+                        setInquiryError(null);
+                      }}
+                      className={cn(
+                        'inline-flex items-center justify-center gap-2 py-2.5 px-3 rounded-lg text-xs font-bold transition-colors cursor-pointer whitespace-nowrap',
+                        contactTab === 'onboarding'
+                          ? 'bg-brand-500 text-white'
+                          : 'text-white/85 hover:text-white'
+                      )}
                     >
-                      Sign In
+                      <ClipboardCheck size={14} />
+                      Client Onboarding
                     </button>
                   </div>
 
-                  <div className="border-t border-slate-200 pt-6">
+                  <div>
                     {inquirySubmitted ? (
-                      <div className="bg-white border border-brand-200 rounded-xl p-5 space-y-2">
+                      <div className="bg-white border border-brand-300 rounded-xl p-6 space-y-4">
                         <div className="flex items-center gap-2 text-brand-700 font-bold text-sm">
                           <Check size={18} />
-                          <span>Onboarding request received</span>
+                          <span>
+                            {contactTab === 'consultation'
+                              ? 'Free consultation request confirmed'
+                              : 'Client onboarding profile submitted'}
+                          </span>
                         </div>
-                        <p className="text-sm text-black">
-                          Thank you, {inquiryName}. We sent migration checklist details to{' '}
-                          <span className="font-semibold text-black">{inquiryEmail}</span> for{' '}
-                          {inquiryVolume}.
+                        <p className="text-sm text-black leading-relaxed">
+                          Thank you, <span className="font-semibold">{inquiryName}</span>. We
+                          logged your{' '}
+                          <span className="font-semibold">{selectedPackage}</span> request for{' '}
+                          <span className="font-semibold">
+                            {inquiryBusiness || 'your business'}
+                          </span>{' '}
+                          and will follow up at{' '}
+                          <span className="font-semibold">{inquiryEmail}</span> or{' '}
+                          <span className="font-semibold">{inquiryPhone}</span>
+                          {contactTab === 'consultation'
+                            ? ` (${inquiryPreferredTime}).`
+                            : ` (${inquiryVolume}).`}
                         </p>
-                        <button
-                          type="button"
-                          onClick={onGetStarted}
-                          className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-brand-700 hover:underline cursor-pointer"
-                        >
-                          Continue straight into your workspace
-                          <ArrowRight size={13} />
-                        </button>
+                        <div className="flex flex-wrap items-center gap-3 pt-1">
+                          <button
+                            type="button"
+                            onClick={onGetStarted}
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                          >
+                            Open Free Cloud Workspace
+                            <ArrowRight size={14} />
+                          </button>
+                          <a
+                            href={getWhatsAppHref()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-black text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <MessageCircle size={14} className="text-brand-600" />
+                            Follow up on WhatsApp
+                          </a>
+                        </div>
                       </div>
                     ) : (
                       <form onSubmit={handleInquirySubmit} className="space-y-4">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-black">
-                          Request Migration Assistance
-                        </p>
                         {inquiryError && (
-                          <p className="text-xs font-medium text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                          <p className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
                             {inquiryError}
                           </p>
                         )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label
                               htmlFor="lead-name"
                               className="block text-xs font-semibold text-black mb-1"
                             >
-                              Full Name / Business
+                              Full Name
                             </label>
                             <input
                               id="lead-name"
@@ -1251,6 +1934,25 @@ export function LandingPage({
                               className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black placeholder:text-black/45 focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
                             />
                           </div>
+                          <div>
+                            <label
+                              htmlFor="lead-business"
+                              className="block text-xs font-semibold text-black mb-1"
+                            >
+                              Business Name
+                            </label>
+                            <input
+                              id="lead-business"
+                              type="text"
+                              value={inquiryBusiness}
+                              onChange={(e) => setInquiryBusiness(e.target.value)}
+                              placeholder="Blue Mountain Logistics Ltd."
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black placeholder:text-black/45 focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label
                               htmlFor="lead-email"
@@ -1267,34 +1969,150 @@ export function LandingPage({
                               className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black placeholder:text-black/45 focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
                             />
                           </div>
+                          <div>
+                            <label
+                              htmlFor="lead-phone"
+                              className="block text-xs font-semibold text-black mb-1"
+                            >
+                              Phone / WhatsApp
+                            </label>
+                            <input
+                              id="lead-phone"
+                              type="tel"
+                              value={inquiryPhone}
+                              onChange={(e) => setInquiryPhone(e.target.value)}
+                              placeholder="+1 (876) 555-0190"
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black placeholder:text-black/45 focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                            />
+                          </div>
                         </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <div>
+                            <label
+                              htmlFor="lead-package"
+                              className="block text-xs font-semibold text-black mb-1"
+                            >
+                              Service Package
+                            </label>
+                            <select
+                              id="lead-package"
+                              value={selectedPackage}
+                              onChange={(e) => setSelectedPackage(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                            >
+                              <optgroup label="Bookkeeping Packages">
+                                <option>Self-Managed Workspace</option>
+                                <option>Monthly Core Bookkeeping</option>
+                                <option>Full-Service & Advisory</option>
+                                <option>Custom / Catch-Up Quote</option>
+                              </optgroup>
+                              <optgroup label="Specific Services">
+                                {MAJOR_SERVICES.map((service) => (
+                                  <option key={service.number} value={service.title}>
+                                    {service.title}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            </select>
+                          </div>
+
+                          {contactTab === 'consultation' ? (
+                            <div>
+                              <label
+                                htmlFor="lead-time"
+                                className="block text-xs font-semibold text-black mb-1"
+                              >
+                                Preferred Call Window
+                              </label>
+                              <select
+                                id="lead-time"
+                                value={inquiryPreferredTime}
+                                onChange={(e) => setInquiryPreferredTime(e.target.value)}
+                                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                              >
+                                <option>Morning (9:00 AM – 12:00 PM)</option>
+                                <option>Afternoon (12:00 PM – 4:00 PM)</option>
+                                <option>Late Afternoon (4:00 PM – 6:00 PM)</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <div>
+                              <label
+                                htmlFor="lead-volume"
+                                className="block text-xs font-semibold text-black mb-1"
+                              >
+                                Monthly Transaction Volume
+                              </label>
+                              <select
+                                id="lead-volume"
+                                value={inquiryVolume}
+                                onChange={(e) => setInquiryVolume(e.target.value)}
+                                className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                              >
+                                <option>Under 50 transactions / mo</option>
+                                <option>50 – 250 transactions / mo</option>
+                                <option>250 – 1,000 transactions / mo</option>
+                                <option>1,000+ transactions / mo (Multi-entity)</option>
+                              </select>
+                            </div>
+                          )}
+                        </div>
+
+                        {contactTab === 'onboarding' && (
+                          <div>
+                            <label
+                              htmlFor="lead-setup"
+                              className="block text-xs font-semibold text-black mb-1"
+                            >
+                              Current Accounting Records
+                            </label>
+                            <select
+                              id="lead-setup"
+                              value={inquiryCurrentSetup}
+                              onChange={(e) => setInquiryCurrentSetup(e.target.value)}
+                              className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
+                            >
+                              <option>Excel / Spreadsheets</option>
+                              <option>Paper Receipts / Bank Statements Only</option>
+                              <option>QuickBooks / Xero / Wave</option>
+                              <option>Starting a New Business Ledger</option>
+                            </select>
+                          </div>
+                        )}
 
                         <div>
                           <label
-                            htmlFor="lead-volume"
+                            htmlFor="lead-notes"
                             className="block text-xs font-semibold text-black mb-1"
                           >
-                            Monthly Transaction Volume
+                            {contactTab === 'consultation'
+                              ? 'What would you like help with? (Optional)'
+                              : 'Key priorities or catch-up months needed (Optional)'}
                           </label>
-                          <select
-                            id="lead-volume"
-                            value={inquiryVolume}
-                            onChange={(e) => setInquiryVolume(e.target.value)}
-                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
-                          >
-                            <option>Under 50 transactions / mo</option>
-                            <option>50 – 250 transactions / mo</option>
-                            <option>250 – 1,000 transactions / mo</option>
-                            <option>1,000+ transactions / mo (Multi-entity)</option>
-                          </select>
+                          <textarea
+                            id="lead-notes"
+                            rows={2}
+                            value={inquiryNotes}
+                            onChange={(e) => setInquiryNotes(e.target.value)}
+                            placeholder="e.g., Monthly reconciliations, G.C.T. tracking, or catching up 2026 books"
+                            className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black placeholder:text-black/45 focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500 resize-none"
+                          />
                         </div>
 
                         <button
                           type="submit"
-                          className="w-full py-2.5 px-4 bg-black hover:bg-slate-900 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                          className="w-full py-3 px-4 bg-black hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
                         >
-                          Request Onboarding Checklist
+                          {contactTab === 'consultation'
+                            ? 'Book Free 20-Min Consultation'
+                            : 'Submit Client Onboarding Form'}
                         </button>
+
+                        <p className="flex items-center justify-center gap-1.5 text-[11px] text-black/75 pt-1">
+                          <Lock size={12} className="text-brand-600" />
+                          100% confidential enquiry · No obligation or long-term lock-in
+                        </p>
                       </form>
                     )}
                   </div>
@@ -1418,44 +2236,70 @@ export function LandingPage({
             {/* Account & Support Column */}
             <div className="lg:col-span-3 space-y-4">
               <p className="text-xs font-bold uppercase tracking-[0.14em] text-white">
-                Account & Resources
+                Packages & Contact
               </p>
               <ul className="space-y-2.5 text-sm">
                 <li>
                   <button
                     type="button"
-                    onClick={() => scrollToSection('workflow')}
+                    onClick={() => scrollToSection('services')}
                     className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
                   >
-                    Monthly Close Workflow
+                    Core Bookkeeping Services
                   </button>
                 </li>
                 <li>
                   <button
                     type="button"
-                    onClick={() => scrollToSection('proof')}
+                    onClick={() => scrollToSection('packages')}
                     className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
                   >
-                    Verified Client Outcomes
+                    Service Packages & Pricing
                   </button>
                 </li>
                 <li>
                   <button
                     type="button"
-                    onClick={() => scrollToSection('faq')}
+                    onClick={() => scrollToSection('about')}
                     className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
                   >
-                    Accountant FAQ
+                    About & Confidentiality
                   </button>
                 </li>
                 <li>
                   <button
                     type="button"
-                    onClick={() => scrollToSection('contact')}
+                    onClick={() => {
+                      setContactTab('consultation');
+                      scrollToSection('contact');
+                    }}
                     className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
                   >
-                    Migration Assistance
+                    Book Free Consultation
                   </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContactTab('onboarding');
+                      scrollToSection('contact');
+                    }}
+                    className="text-white/85 hover:text-brand-400 transition-colors cursor-pointer text-left"
+                  >
+                    Client Onboarding Form
+                  </button>
+                </li>
+                <li>
+                  <a
+                    href={getWhatsAppHref()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-emerald-400 hover:underline underline-offset-4 transition-colors"
+                  >
+                    <MessageCircle size={14} />
+                    WhatsApp Enquiry
+                  </a>
                 </li>
                 <li className="pt-1 flex items-center gap-4">
                   <button
