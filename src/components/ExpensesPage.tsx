@@ -21,7 +21,7 @@ import {
   FileDown
 } from 'lucide-react';
 import { Expense, BudgetCategory, Budget } from '../types';
-import { cn, formatCurrency, parseLocalDate, formatLocalDate } from '../lib/utils';
+import { cn, formatCurrency, parseLocalDate, formatLocalDate, sanitizeCsvCell } from '../lib/utils';
 import { dataService } from '../services/dataService';
 import { ConfirmationModal } from './ConfirmationModal';
 import { ExpenseImportModal } from './ExpenseImportModal';
@@ -136,13 +136,16 @@ export function ExpensesPage() {
     }
   };
 
+  const canEdit = dataService.can('manage_transactions');
+
   const handleDelete = (id: string) => {
+    if (!canEdit) return;
     setExpenseToDelete(id);
     setIsDeleteModalOpen(true);
   };
 
   const confirmDelete = () => {
-    if (!expenseToDelete) return;
+    if (!expenseToDelete || !canEdit) return;
     try {
       dataService.deleteExpense(expenseToDelete);
       fetchExpenses();
@@ -154,13 +157,13 @@ export function ExpensesPage() {
   };
 
   const handleBulkStatusUpdate = (status: 'Paid' | 'Pending' | 'Overdue') => {
-    if (selectedIds.length === 0) return;
+    if (!canEdit || selectedIds.length === 0) return;
     setBulkStatusToApply(status);
     setIsBulkStatusConfirmOpen(true);
   };
 
   const confirmBulkStatusUpdate = () => {
-    if (!bulkStatusToApply || selectedIds.length === 0) return;
+    if (!canEdit || !bulkStatusToApply || selectedIds.length === 0) return;
     try {
       dataService.bulkUpdateExpenseStatus(selectedIds, bulkStatusToApply);
       setSelectedIds([]);
@@ -174,7 +177,7 @@ export function ExpensesPage() {
   };
 
   const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return;
+    if (!canEdit || selectedIds.length === 0) return;
     setIsBulkDeleteConfirmOpen(true);
   };
 
@@ -228,14 +231,14 @@ export function ExpensesPage() {
       e.amount,
       e.date,
       e.due_date || '',
-      `"${(e.description || '').replace(/"/g, '""')}"`,
+      e.description || '',
       e.status,
       e.is_recurring ? 'Yes' : 'No',
       e.frequency || '-',
       e.duration_months || '-'
-    ].join(','));
+    ].map(sanitizeCsvCell).join(','));
 
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
+    const csvContent = [headers.map(sanitizeCsvCell).join(','), ...csvRows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
@@ -667,21 +670,25 @@ export function ExpensesPage() {
                         >
                           <FileDown size={16} />
                         </button>
-                        <button 
-                          onClick={() => {
-                            setEditingExpense(expense);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(expense.id)}
-                          className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canEdit && (
+                          <>
+                            <button 
+                              onClick={() => {
+                                setEditingExpense(expense);
+                                setIsModalOpen(true);
+                              }}
+                              className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(expense.id)}
+                              className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

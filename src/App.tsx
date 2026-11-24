@@ -28,6 +28,7 @@ import { AnalyticsPage } from './components/AnalyticsPage';
 import { DataSourcesPage } from './components/DataSourcesPage';
 import { SettingsPage } from './components/SettingsPage';
 import { SecuritySettingsPage } from './components/SecuritySettingsPage';
+import { TeamManagementPage } from './components/TeamManagementPage';
 import { AuthPage } from './components/AuthPage';
 import { LandingPage } from './components/LandingPage';
 import { DataVisualisationPage } from './components/DataVisualisationPage';
@@ -39,7 +40,9 @@ import { ClientsPage, ClientModal } from './components/ClientsPage';
 import { AccountsPage } from './components/AccountsPage';
 import { AccountModal } from './components/AccountModal';
 import { LedgerPage, JournalEntryModal } from './components/LedgerPage';
+import { BankReconciliationPage } from './components/BankReconciliationPage';
 import { ReportsPage } from './components/ReportsPage';
+import { JamaicaCompliancePage } from './components/JamaicaCompliancePage';
 import { AccountsReceivablePage } from './components/AccountsReceivablePage';
 import { AccountsPayablePage } from './components/AccountsPayablePage';
 import { ExportModal, ExportFilters } from './components/ExportModal';
@@ -50,12 +53,14 @@ import { TopBar, SettingsSection } from './components/TopBar';
 import { dataService } from './services/dataService';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { DataRecord, BudgetCategory, Budget, Expense, Client, Account, JournalEntry } from './types';
-import { formatCurrency, parseLocalDate, formatLocalDate } from './lib/utils';
+import { formatCurrency, parseLocalDate, formatLocalDate, sanitizeCsvCell } from './lib/utils';
+import { hasPermission, normalizeRole } from './lib/permissions';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [publicView, setPublicView] = useState<'landing' | 'auth'>('landing');
   const [authInitialMode, setAuthInitialMode] = useState<'login' | 'signup'>('login');
+  const [authInitialPlan, setAuthInitialPlan] = useState<string>('Essential Monthly Bookkeeping');
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(isSupabaseConfigured);
   const [isPasswordRecovery, setIsPasswordRecovery] = useState<boolean>(false);
   const [activePage, setActivePage] = useState<PageId>('dashboard');
@@ -182,6 +187,40 @@ export default function App() {
     }
   }, []);
 
+  // Enforce configurable inactivity auto-lock timeout while signed in
+  useEffect(() => {
+    if (!user) return;
+    let timerId: number | null = null;
+
+    const scheduleTimer = () => {
+      if (timerId !== null) window.clearTimeout(timerId);
+      const timeoutMinutes = Number(dataService.getSecuritySettings()?.sessionTimeout ?? 30);
+      if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) return;
+
+      timerId = window.setTimeout(() => {
+        dataService.recordAuditLog({
+          actor: user?.email || user?.name || 'User',
+          category: 'Auth',
+          action: 'Session auto-locked',
+          details: `Signed out after ${timeoutMinutes} minutes of inactivity`,
+          status: 'Info',
+        });
+        handleLogout();
+      }, timeoutMinutes * 60 * 1000);
+    };
+
+    const activityEvents = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    activityEvents.forEach((ev) => window.addEventListener(ev, scheduleTimer, { passive: true }));
+    window.addEventListener('island-data-synced', scheduleTimer);
+    scheduleTimer();
+
+    return () => {
+      if (timerId !== null) window.clearTimeout(timerId);
+      activityEvents.forEach((ev) => window.removeEventListener(ev, scheduleTimer));
+      window.removeEventListener('island-data-synced', scheduleTimer);
+    };
+  }, [user]);
+
   const fetchSettings = () => {
     const settings = dataService.getSettings();
     if (settings.tax_rate != null) {
@@ -225,6 +264,7 @@ export default function App() {
   };
 
   const handleSaveTransaction = (transaction: DataRecord) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.saveTransaction(transaction);
     fetchTransactions();
     setIsTransactionModalOpen(false);
@@ -232,17 +272,20 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (id: string) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.deleteTransaction(id);
     fetchTransactions();
   };
 
   const handleSaveInvoice = (invoice: any) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.saveInvoice(invoice);
     setIsInvoiceModalOpen(false);
     window.dispatchEvent(new CustomEvent('island-data-synced'));
   };
 
   const handleSaveExpense = (expense: any) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.saveExpense(expense);
     fetchExpenses();
     setIsExpenseModalOpen(false);
@@ -250,6 +293,7 @@ export default function App() {
   };
 
   const handleSaveBudget = (budget: Budget) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.saveBudget(budget);
     fetchBudgets();
     setIsBudgetModalOpen(false);
@@ -257,6 +301,7 @@ export default function App() {
   };
 
   const handleSaveClient = (client: Client) => {
+    if (!hasPermission(user, 'manage_transactions')) return;
     dataService.saveClient(client);
     fetchClients();
     setIsClientModalOpen(false);
@@ -264,6 +309,7 @@ export default function App() {
   };
 
   const handleSaveAccount = (account: Account) => {
+    if (!hasPermission(user, 'manage_ledger')) return;
     dataService.saveAccount(account);
     fetchAccounts();
     setIsAccountModalOpen(false);
@@ -271,6 +317,7 @@ export default function App() {
   };
 
   const handleSaveJournalEntry = (entry: JournalEntry) => {
+    if (!hasPermission(user, 'manage_ledger')) return;
     dataService.saveJournalEntry(entry);
     fetchJournalEntries();
     setIsJournalModalOpen(false);
@@ -278,17 +325,26 @@ export default function App() {
   };
 
   const handleLogin = (userData: any) => {
-    setUser(userData);
-    dataService.saveUser(userData);
+    const activeUser = dataService.activateWorkspaceForUser(userData);
+    setUser(activeUser);
     loadAllLocalData();
+    dataService.recordAuditLog({
+      actor: activeUser?.email || activeUser?.name || 'User',
+      category: 'Auth',
+      action: 'User signed in',
+      details: `${activeUser?.authMode === 'local' ? 'Local Workspace' : 'Cloud Session'} · ${normalizeRole(activeUser?.role)}`,
+      status: 'Success',
+    });
   };
 
   const handleLaunchDemo = () => {
     handleLogin({
       name: 'Kareem Campbell',
       email: 'finance@bluemountainlogistics.com',
-      role: 'Business Owner',
+      role: 'Owner',
       company: 'Blue Mountain Logistics Ltd.',
+      workspaceId: 'ws-default',
+      authMode: 'local',
       photo: '',
     });
   };
@@ -336,8 +392,8 @@ export default function App() {
     ]);
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
+      headers.map(sanitizeCsvCell).join(','),
+      ...rows.map(row => row.map(sanitizeCsvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -380,6 +436,7 @@ export default function App() {
       return (
         <AuthPage
           initialMode={authInitialMode}
+          initialPlan={authInitialPlan}
           onLogin={handleLogin}
           onBackToHome={() => setPublicView('landing')}
         />
@@ -388,7 +445,10 @@ export default function App() {
 
     return (
       <LandingPage
-        onGetStarted={() => {
+        onGetStarted={(planName) => {
+          if (planName) {
+            setAuthInitialPlan(planName);
+          }
           setAuthInitialMode('signup');
           setPublicView('auth');
         }}
@@ -415,6 +475,8 @@ export default function App() {
         return <DataSourcesPage />;
       case 'settings':
         return <SettingsPage user={user} onUpdateUser={setUser} initialSection={settingsSection} />;
+      case 'team':
+        return <TeamManagementPage user={user} onSwitchUser={(nextUser) => handleLogin(nextUser)} />;
       case 'security':
         return <SecuritySettingsPage />;
       case 'visualisation':
@@ -448,12 +510,16 @@ export default function App() {
         />;
       case 'ledger':
         return <LedgerPage />;
+      case 'reconciliation':
+        return <BankReconciliationPage />;
       case 'accounts_receivable':
         return <AccountsReceivablePage />;
       case 'accounts_payable':
         return <AccountsPayablePage />;
       case 'reports':
-        return <ReportsPage />;
+        return <ReportsPage onNavigateToReconciliation={() => setActivePage('reconciliation')} />;
+      case 'jamaica-compliance':
+        return <JamaicaCompliancePage />;
       default:
         const monthlyData = transactions.reduce((acc: any[], curr) => {
           const month = parseLocalDate(curr.date).toLocaleString('default', { month: 'short' });
@@ -638,16 +704,18 @@ export default function App() {
           >
             {activePage === 'dashboard' && (
               <div className="flex gap-2">
-                <button 
-                  onClick={() => {
-                    setEditingTransaction(null);
-                    setIsTransactionModalOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20"
-                >
-                  <Plus size={16} />
-                  New Record
-                </button>
+                {hasPermission(user, 'manage_transactions') && (
+                  <button 
+                    onClick={() => {
+                      setEditingTransaction(null);
+                      setIsTransactionModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-brand-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20"
+                  >
+                    <Plus size={16} />
+                    New Record
+                  </button>
+                )}
                 <button 
                   onClick={() => setIsExportModalOpen(true)}
                   className="flex items-center gap-2 px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-bold text-slate-600 hover:bg-slate-50 transition-all shadow-sm uppercase tracking-widest"
@@ -657,7 +725,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'invoices' && (
+            {activePage === 'invoices' && hasPermission(user, 'manage_transactions') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsInvoiceModalOpen(true)}
@@ -668,7 +736,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'expenses' && (
+            {activePage === 'expenses' && hasPermission(user, 'manage_transactions') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsExpenseModalOpen(true)}
@@ -679,7 +747,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'budgets' && (
+            {activePage === 'budgets' && hasPermission(user, 'manage_transactions') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => {
@@ -700,7 +768,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'clients' && (
+            {activePage === 'clients' && hasPermission(user, 'manage_transactions') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => {
@@ -714,7 +782,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'accounts' && (
+            {activePage === 'accounts' && hasPermission(user, 'manage_ledger') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => {
@@ -728,7 +796,7 @@ export default function App() {
                 </button>
               </div>
             )}
-            {activePage === 'ledger' && (
+            {activePage === 'ledger' && hasPermission(user, 'manage_ledger') && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsJournalModalOpen(true)}
@@ -751,6 +819,27 @@ export default function App() {
               </div>
             )}
           </TopBar>
+          {(normalizeRole(user?.role) === 'Viewer' || normalizeRole(user?.role) === 'Bookkeeper') && (
+            <div className="mb-6 px-5 py-3 rounded-2xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div>
+                <span className="font-black uppercase tracking-wider text-accent-400">
+                  {normalizeRole(user?.role)} Access
+                </span>
+                <span className="text-slate-300 ml-2">
+                  {normalizeRole(user?.role) === 'Viewer'
+                    ? 'Read-only access active — financial statements and audit views are enabled; creating or editing entries is restricted.'
+                    : 'Operational bookkeeping access active — transactions, clients, invoices, and expenses are enabled; ledger adjustments and team controls require Accountant or Owner access.'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActivePage('team')}
+                className="text-xs font-bold text-brand-400 hover:text-brand-300 whitespace-nowrap cursor-pointer self-start sm:self-auto"
+              >
+                View Permissions
+              </button>
+            </div>
+          )}
           {renderContent()}
 
           <ExportModal 
@@ -837,6 +926,13 @@ export default function App() {
             className="hover:text-brand-600 transition-colors cursor-pointer"
           >
             Financial Reports
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePage('jamaica-compliance')}
+            className="hover:text-brand-600 transition-colors cursor-pointer"
+          >
+            Jamaica Tax &amp; Payroll
           </button>
           <button
             type="button"

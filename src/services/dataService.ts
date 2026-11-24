@@ -9,9 +9,23 @@ import {
   JournalEntry,
   AppNotification,
   JournalLine,
+  BankStatementLine,
+  ReconciliationRecord,
+  AuditLogEntry,
+  AuditLogCategory,
+  TeamMember,
+  WorkspaceInvite,
+  WorkspacePermission,
+  WorkspaceRole,
+  JamaicaComplianceProfile,
+  PayrollEmployee,
+  PayrollRunRecord,
+  GctReturnRecord,
+  JamaicaComplianceState,
 } from "../types";
 import { supabase, isSupabaseConfigured } from "../lib/supabase";
 import { parseLocalDate, formatLocalDate } from "../lib/utils";
+import { hasPermission, normalizeRole } from "../lib/permissions";
 
 function safeParseJSON<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -37,7 +51,58 @@ const STORAGE_KEYS = {
   NOTIFICATIONS: "island_notifications",
   ECOMMERCE_SOURCES: "island_ecommerce_sources",
   SYNC_LOGS: "island_sync_logs",
+  BANK_STATEMENT_LINES: "island_bank_statement_lines",
+  RECONCILIATIONS: "island_reconciliations",
+  AUDIT_LOGS: "island_audit_logs",
+  TEAM_MEMBERS: "island_team_members",
+  JAMAICA_COMPLIANCE: "island_jamaica_compliance",
 };
+
+const WORKSPACE_STORE_KEY = "island_workspace_store";
+const WORKSPACE_INVITES_KEY = "island_workspace_invites";
+
+const WORKSPACE_DATA_KEYS = Object.entries(STORAGE_KEYS)
+  .filter(([key]) => key !== "USER")
+  .map(([, val]) => val);
+
+function saveWorkspaceSnapshot(workspaceId: string) {
+  if (!workspaceId) return;
+  const store = safeParseJSON<Record<string, Record<string, string>>>(
+    localStorage.getItem(WORKSPACE_STORE_KEY),
+    {}
+  );
+  const snapshot: Record<string, string> = {};
+  WORKSPACE_DATA_KEYS.forEach((key) => {
+    const val = localStorage.getItem(key);
+    if (val !== null) {
+      snapshot[key] = val;
+    }
+  });
+  store[workspaceId] = snapshot;
+  localStorage.setItem(WORKSPACE_STORE_KEY, JSON.stringify(store));
+}
+
+function loadWorkspaceSnapshot(workspaceId: string) {
+  const store = safeParseJSON<Record<string, Record<string, string>>>(
+    localStorage.getItem(WORKSPACE_STORE_KEY),
+    {}
+  );
+  const snapshot = store[workspaceId];
+  if (snapshot) {
+    WORKSPACE_DATA_KEYS.forEach((key) => {
+      if (snapshot[key] !== undefined) {
+        localStorage.setItem(key, snapshot[key]);
+      } else {
+        localStorage.removeItem(key);
+      }
+    });
+    return true;
+  }
+  if (workspaceId !== "ws-default") {
+    WORKSPACE_DATA_KEYS.forEach((key) => localStorage.removeItem(key));
+  }
+  return false;
+}
 
 export interface EcommerceSource {
   id: string;
@@ -120,6 +185,10 @@ export const dataService = {
   getActiveUserId: () => activeUserId,
 
   clearSession: () => {
+    const currentUser = safeParseJSON<any>(localStorage.getItem(STORAGE_KEYS.USER), null);
+    if (currentUser) {
+      saveWorkspaceSnapshot(currentUser.workspaceId || "ws-default");
+    }
     activeUserId = null;
     Object.values(STORAGE_KEYS).forEach((key) => localStorage.removeItem(key));
   },
@@ -171,6 +240,10 @@ export const dataService = {
       authUser?.email?.split("@")[0] ||
       "Business Owner";
     const fallbackCompany = authUser?.user_metadata?.company || "Island Bookkeeping";
+    const fallbackPlan =
+      (authUser?.user_metadata as any)?.plan ||
+      dataService.getUser()?.plan ||
+      "Essential Monthly Bookkeeping";
 
     let userProfile = profileRes.data
       ? {
@@ -179,6 +252,7 @@ export const dataService = {
           email: profileRes.data.email || authUser?.email || "",
           role: profileRes.data.role || "Business Owner",
           company: profileRes.data.company || fallbackCompany,
+          plan: fallbackPlan,
           photo: profileRes.data.photo || "",
         }
       : {
@@ -187,6 +261,7 @@ export const dataService = {
           email: authUser?.email || "",
           role: "Business Owner",
           company: fallbackCompany,
+          plan: fallbackPlan,
           photo: "",
         };
 
@@ -442,6 +517,14 @@ export const dataService = {
     }
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
 
+    dataService.recordAuditLog({
+      category: "Transaction",
+      action: index > -1 ? "Transaction updated" : "Transaction created",
+      details: `${record.category} (${record.region}) · Revenue ${record.revenue.toFixed(2)}`,
+      reference: record.id,
+      status: "Success",
+    });
+
     runCloudSync(async (client, userId) => {
       const { error } = await client.from("transactions").upsert({
         id: record.id,
@@ -463,6 +546,14 @@ export const dataService = {
     const transactions = dataService.getTransactions();
     const filtered = transactions.filter((t) => t.id !== id);
     localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(filtered));
+
+    dataService.recordAuditLog({
+      category: "Transaction",
+      action: "Transaction deleted",
+      details: `Removed transaction record ${id}`,
+      reference: id,
+      status: "Warning",
+    });
 
     runCloudSync(async (client, userId) => {
       const { error } = await client.from("transactions").delete().eq("user_id", userId).eq("id", id);
@@ -571,6 +662,14 @@ export const dataService = {
     }
     localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(invoices));
 
+    dataService.recordAuditLog({
+      category: "Transaction",
+      action: index > -1 ? "Invoice updated" : "Invoice created",
+      details: `${record.client_name} · ${record.status} (${Number(record.amount || 0).toFixed(2)})`,
+      reference: record.id,
+      status: "Success",
+    });
+
     runCloudSync(async (client, userId) => {
       await client.from("invoices").upsert({
         id: record.id,
@@ -593,6 +692,14 @@ export const dataService = {
     const invoices = dataService.getInvoices();
     const filtered = invoices.filter((i) => i.id !== id);
     localStorage.setItem(STORAGE_KEYS.INVOICES, JSON.stringify(filtered));
+
+    dataService.recordAuditLog({
+      category: "Transaction",
+      action: "Invoice deleted",
+      details: `Removed invoice ${id}`,
+      reference: id,
+      status: "Warning",
+    });
 
     runCloudSync(async (client, userId) => {
       await client.from("invoices").delete().eq("user_id", userId).eq("id", id);
@@ -692,6 +799,14 @@ export const dataService = {
     }
 
     localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses));
+
+    dataService.recordAuditLog({
+      category: "Transaction",
+      action: index > -1 ? "Expense updated" : "Expense recorded",
+      details: `${updatedExpense.category} · ${updatedExpense.status} (${Number(updatedExpense.amount || 0).toFixed(2)})`,
+      reference: updatedExpense.id,
+      status: "Success",
+    });
 
     const toUpsert = [updatedExpense, ...generatedExpenses];
     runCloudSync(async (client, userId) => {
@@ -955,6 +1070,25 @@ export const dataService = {
     const existing = dataService.getUser() || {};
     const merged = { ...existing, ...user };
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(merged));
+
+    const members = safeParseJSON<TeamMember[]>(
+      localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS),
+      []
+    );
+    if (members.length > 0 && merged.email) {
+      const updatedMembers = members.map((m) =>
+        m.email.toLowerCase() === merged.email.toLowerCase()
+          ? {
+              ...m,
+              name: merged.name || m.name,
+              photo: merged.photo !== undefined ? merged.photo : m.photo,
+              last_active: new Date().toISOString(),
+            }
+          : m
+      );
+      localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+    }
+    saveWorkspaceSnapshot(merged.workspaceId || "ws-default");
     dispatchDataSynced();
 
     runCloudSync(async (client, userId) => {
@@ -1092,6 +1226,20 @@ export const dataService = {
     localStorage.setItem(STORAGE_KEYS.JOURNAL_ENTRIES, JSON.stringify(entries));
     localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
 
+    const totalAmount = record.lines.reduce((sum, l) => sum + Number(l.debit || 0), 0);
+    const isAdjustment = record.id.startsWith("ADJ-") || record.description.toLowerCase().includes("adjustment");
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action: isAdjustment
+        ? "Ledger adjustment posted"
+        : index > -1
+          ? "Journal entry updated"
+          : "Journal entry posted",
+      details: `${record.description || "Journal entry"} (${record.status} · ${totalAmount.toFixed(2)})`,
+      reference: record.id,
+      status: "Success",
+    });
+
     runCloudSync(async (client, userId) => {
       await client.from("journal_entries").upsert({
         id: record.id,
@@ -1139,6 +1287,14 @@ export const dataService = {
 
     const filtered = entries.filter((e) => e.id !== id);
     localStorage.setItem(STORAGE_KEYS.JOURNAL_ENTRIES, JSON.stringify(filtered));
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action: "Journal entry deleted",
+      details: entryToDelete ? `Reversed ${entryToDelete.description}` : `Removed journal entry ${id}`,
+      reference: id,
+      status: "Warning",
+    });
 
     runCloudSync(async (client, userId) => {
       await client.from("journal_entries").delete().eq("user_id", userId).eq("id", id);
@@ -1412,4 +1568,1065 @@ export const dataService = {
     });
     return updated;
   },
+
+  getBankStatementLines: (): BankStatementLine[] => {
+    return safeParseJSON<BankStatementLine[]>(
+      localStorage.getItem(STORAGE_KEYS.BANK_STATEMENT_LINES),
+      []
+    );
+  },
+
+  saveBankStatementLines: (lines: BankStatementLine[]): void => {
+    localStorage.setItem(STORAGE_KEYS.BANK_STATEMENT_LINES, JSON.stringify(lines));
+    dispatchDataSynced();
+  },
+
+  addBankStatementLines: (newLines: BankStatementLine[]): BankStatementLine[] => {
+    const existing = dataService.getBankStatementLines();
+    const updated = [...newLines, ...existing];
+    localStorage.setItem(STORAGE_KEYS.BANK_STATEMENT_LINES, JSON.stringify(updated));
+    dispatchDataSynced();
+    return updated;
+  },
+
+  deleteBankStatementLine: (id: string): BankStatementLine[] => {
+    const updated = dataService.getBankStatementLines().filter((l) => l.id !== id);
+    localStorage.setItem(STORAGE_KEYS.BANK_STATEMENT_LINES, JSON.stringify(updated));
+    dispatchDataSynced();
+    return updated;
+  },
+
+  getReconciliations: (): ReconciliationRecord[] => {
+    return safeParseJSON<ReconciliationRecord[]>(
+      localStorage.getItem(STORAGE_KEYS.RECONCILIATIONS),
+      []
+    );
+  },
+
+  saveReconciliation: (record: ReconciliationRecord): ReconciliationRecord[] => {
+    const existing = dataService.getReconciliations();
+    const index = existing.findIndex((r) => r.id === record.id);
+    const updated =
+      index > -1
+        ? existing.map((r, i) => (i === index ? record : r))
+        : [record, ...existing];
+    localStorage.setItem(STORAGE_KEYS.RECONCILIATIONS, JSON.stringify(updated));
+
+    if (record.status === "Completed" && record.statement_line_ids.length > 0) {
+      const lineIds = new Set(record.statement_line_ids);
+      const lines = dataService.getBankStatementLines().map((line) =>
+        lineIds.has(line.id)
+          ? { ...line, reconciliation_id: record.id }
+          : line
+      );
+      localStorage.setItem(STORAGE_KEYS.BANK_STATEMENT_LINES, JSON.stringify(lines));
+    }
+
+    dataService.recordAuditLog({
+      category: "Reconciliation",
+      action:
+        record.status === "Completed"
+          ? "Bank reconciliation completed"
+          : "Reconciliation draft saved",
+      details: `${record.account_name} · Statement ${record.statement_date} (${record.cleared_count} cleared)`,
+      reference: record.id,
+      status: record.status === "Completed" ? "Success" : "Info",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  deleteReconciliation: (id: string): ReconciliationRecord[] => {
+    const updated = dataService.getReconciliations().filter((r) => r.id !== id);
+    localStorage.setItem(STORAGE_KEYS.RECONCILIATIONS, JSON.stringify(updated));
+
+    const lines = dataService.getBankStatementLines().map((line) =>
+      line.reconciliation_id === id
+        ? {
+            ...line,
+            reconciliation_id: undefined,
+            status: line.status === "Adjusted" ? "Adjusted" : "Unmatched",
+            matched_book_id: undefined,
+          }
+        : line
+    );
+    localStorage.setItem(STORAGE_KEYS.BANK_STATEMENT_LINES, JSON.stringify(lines));
+
+    dataService.recordAuditLog({
+      category: "Reconciliation",
+      action: "Reconciliation deleted",
+      details: `Unlocked transactions from reconciliation ${id}`,
+      reference: id,
+      status: "Warning",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  getAuditLogs: (): AuditLogEntry[] => {
+    const raw = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS);
+    if (raw) {
+      return safeParseJSON<AuditLogEntry[]>(raw, []);
+    }
+
+    // Seed initial chronological audit trail from existing workspace history
+    const actor = dataService.getUser()?.email || dataService.getUser()?.name || "Current User";
+    const seeded: AuditLogEntry[] = [];
+
+    const security = dataService.getSecuritySettings();
+    (security.loginHistory || []).forEach((log: any) => {
+      seeded.push({
+        id: `AUD-LOGIN-${log.id}`,
+        timestamp: log.date || new Date().toISOString(),
+        actor,
+        category: "Auth",
+        action: log.status === "Success" ? "User signed in" : "Failed sign-in attempt",
+        details: `${log.device || "Web App"} · ${log.ip || "Current Session"}`,
+        status: log.status === "Success" ? "Success" : "Warning",
+      });
+    });
+
+    dataService.getJournalEntries().forEach((entry) => {
+      const total = entry.lines.reduce((s, l) => s + Number(l.debit || 0), 0);
+      const isAdj = entry.id.startsWith("ADJ-") || entry.description.toLowerCase().includes("adjustment");
+      seeded.push({
+        id: `AUD-JE-${entry.id}`,
+        timestamp: entry.date ? `${entry.date}T12:00:00.000Z` : new Date().toISOString(),
+        actor,
+        category: "Ledger",
+        action: isAdj ? "Ledger adjustment posted" : "Journal entry posted",
+        details: `${entry.description || "Journal entry"} (${entry.status} · ${total.toFixed(2)})`,
+        reference: entry.id,
+        status: "Success",
+      });
+    });
+
+    dataService.getInvoices().forEach((inv) => {
+      seeded.push({
+        id: `AUD-INV-${inv.id}`,
+        timestamp: inv.date ? `${inv.date}T10:00:00.000Z` : new Date().toISOString(),
+        actor,
+        category: "Transaction",
+        action: "Invoice created",
+        details: `${inv.client_name} · ${inv.status} (${Number(inv.amount || 0).toFixed(2)})`,
+        reference: inv.id,
+        status: "Success",
+      });
+    });
+
+    dataService.getExpenses().forEach((exp) => {
+      seeded.push({
+        id: `AUD-EXP-${exp.id}`,
+        timestamp: exp.date ? `${exp.date}T09:00:00.000Z` : new Date().toISOString(),
+        actor,
+        category: "Transaction",
+        action: "Expense recorded",
+        details: `${exp.category} · ${exp.status} (${Number(exp.amount || 0).toFixed(2)})`,
+        reference: exp.id,
+        status: "Success",
+      });
+    });
+
+    dataService.getTransactions().slice(0, 15).forEach((tx) => {
+      seeded.push({
+        id: `AUD-TX-${tx.id}`,
+        timestamp: tx.date ? `${tx.date}T08:00:00.000Z` : new Date().toISOString(),
+        actor,
+        category: "Transaction",
+        action: "Transaction created",
+        details: `${tx.category} (${tx.region}) · Revenue ${Number(tx.revenue || 0).toFixed(2)}`,
+        reference: tx.id,
+        status: "Success",
+      });
+    });
+
+    dataService.getReconciliations().forEach((rec) => {
+      seeded.push({
+        id: `AUD-REC-${rec.id}`,
+        timestamp: rec.completed_at || new Date().toISOString(),
+        actor,
+        category: "Reconciliation",
+        action:
+          rec.status === "Completed"
+            ? "Bank reconciliation completed"
+            : "Reconciliation draft saved",
+        details: `${rec.account_name} · Statement ${rec.statement_date}`,
+        reference: rec.id,
+        status: rec.status === "Completed" ? "Success" : "Info",
+      });
+    });
+
+    const sorted = seeded.sort((a, b) => b.timestamp.localeCompare(a.timestamp)).slice(0, 100);
+    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(sorted));
+    return sorted;
+  },
+
+  recordAuditLog: (
+    entry: Omit<AuditLogEntry, "id" | "timestamp" | "actor"> & {
+      timestamp?: string;
+      actor?: string;
+    }
+  ): AuditLogEntry[] => {
+    const existing = localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS)
+      ? safeParseJSON<AuditLogEntry[]>(localStorage.getItem(STORAGE_KEYS.AUDIT_LOGS), [])
+      : dataService.getAuditLogs();
+    const currentUser = dataService.getUser();
+    const record: AuditLogEntry = {
+      id: `AUD-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      timestamp: entry.timestamp || new Date().toISOString(),
+      actor: entry.actor || currentUser?.email || currentUser?.name || "System",
+      category: entry.category as AuditLogCategory,
+      action: entry.action,
+      details: entry.details,
+      reference: entry.reference,
+      status: entry.status,
+    };
+    const updated = [record, ...existing].slice(0, 200);
+    localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(updated));
+    dispatchDataSynced();
+    return updated;
+  },
+
+  // --- Multi-User Workspace & RBAC APIs ---
+
+  getWorkspaceId: (): string => {
+    return dataService.getUser()?.workspaceId || "ws-default";
+  },
+
+  getRole: (): WorkspaceRole => {
+    return normalizeRole(dataService.getUser()?.role);
+  },
+
+  can: (permission: WorkspacePermission): boolean => {
+    return hasPermission(dataService.getUser(), permission);
+  },
+
+  activateWorkspaceForUser: (userData: any): any => {
+    if (!userData) return null;
+    const currentUser = dataService.getUser();
+    const prevWsId = currentUser?.workspaceId || (currentUser ? "ws-default" : null);
+    const targetWsId = userData.workspaceId || "ws-default";
+
+    if (prevWsId && prevWsId !== targetWsId) {
+      saveWorkspaceSnapshot(prevWsId);
+    }
+
+    loadWorkspaceSnapshot(targetWsId);
+
+    // Resolve role from workspace roster if member already exists
+    const existingMembers = safeParseJSON<TeamMember[]>(
+      localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS),
+      []
+    );
+    const matchedMember = existingMembers.find(
+      (m) => m.email.toLowerCase() === (userData.email || "").toLowerCase()
+    );
+    const resolvedRole: WorkspaceRole = matchedMember
+      ? matchedMember.role
+      : normalizeRole(userData.role);
+
+    const hydratedUser = {
+      ...userData,
+      id: userData.id || matchedMember?.id || `USR-${Math.random().toString(36).slice(2, 9)}`,
+      workspaceId: targetWsId,
+      role: resolvedRole,
+    };
+
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(hydratedUser));
+
+    // Ensure active user is reflected in the workspace roster
+    const nowIso = new Date().toISOString();
+    if (matchedMember) {
+      const updatedMembers = existingMembers.map((m) =>
+        m.id === matchedMember.id
+          ? {
+              ...m,
+              name: hydratedUser.name || m.name,
+              status: m.status === "Suspended" ? "Suspended" : ("Active" as const),
+              last_active: nowIso,
+              photo: hydratedUser.photo || m.photo,
+            }
+          : m
+      );
+      localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+    } else if (hydratedUser.email) {
+      const newMember: TeamMember = {
+        id: hydratedUser.id,
+        workspace_id: targetWsId,
+        name: hydratedUser.name || hydratedUser.email.split("@")[0],
+        email: hydratedUser.email,
+        role: resolvedRole,
+        status: "Active",
+        joined_at: nowIso,
+        last_active: nowIso,
+        photo: hydratedUser.photo || "",
+      };
+      localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify([...existingMembers, newMember]));
+    }
+
+    saveWorkspaceSnapshot(targetWsId);
+    dispatchDataSynced();
+    return hydratedUser;
+  },
+
+  isMemberSuspended: (email: string, workspaceId?: string): boolean => {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) return false;
+    const wsId = workspaceId || "ws-default";
+    const store = safeParseJSON<Record<string, Record<string, string>>>(
+      localStorage.getItem(WORKSPACE_STORE_KEY),
+      {}
+    );
+    const rawMembers =
+      store[wsId]?.[STORAGE_KEYS.TEAM_MEMBERS] ?? localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS);
+    const members = safeParseJSON<TeamMember[]>(rawMembers ?? null, []);
+    const found = members.find((m) => m.email.toLowerCase() === cleanEmail);
+    return found?.status === "Suspended";
+  },
+
+  getTeamMembers: (): TeamMember[] => {
+    const currentUser = dataService.getUser();
+    const wsId = currentUser?.workspaceId || "ws-default";
+    const existing = safeParseJSON<TeamMember[]>(
+      localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS),
+      []
+    );
+
+    if (existing.length === 0 && currentUser) {
+      const ownerRecord: TeamMember = {
+        id: currentUser.id || `USR-${Math.random().toString(36).slice(2, 9)}`,
+        workspace_id: wsId,
+        name: currentUser.name || "Workspace Owner",
+        email: currentUser.email || "owner@islandbookkeeping.com",
+        role: normalizeRole(currentUser.role),
+        status: "Active",
+        joined_at: new Date().toISOString(),
+        last_active: new Date().toISOString(),
+        photo: currentUser.photo || "",
+      };
+      const seeded = [ownerRecord];
+      localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(seeded));
+      saveWorkspaceSnapshot(wsId);
+      return seeded;
+    }
+
+    return existing;
+  },
+
+  getWorkspaceInvites: (): WorkspaceInvite[] => {
+    const wsId = dataService.getWorkspaceId();
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    return allInvites.filter((inv) => inv.workspace_id === wsId);
+  },
+
+  findInviteByCode: (code: string): WorkspaceInvite | null => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return null;
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    return (
+      allInvites.find(
+        (inv) => inv.invite_code.toUpperCase() === clean && inv.status === "Pending"
+      ) || null
+    );
+  },
+
+  inviteTeamMember: (params: {
+    name: string;
+    email: string;
+    role: WorkspaceRole;
+    password?: string;
+  }): { member: TeamMember; invite: WorkspaceInvite } => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can invite team members.");
+    }
+
+    const currentUser = dataService.getUser();
+    const wsId = currentUser?.workspaceId || "ws-default";
+    const cleanEmail = params.email.trim();
+    const cleanName = params.name.trim() || cleanEmail.split("@")[0];
+
+    const members = dataService.getTeamMembers();
+    if (members.some((m) => m.email.toLowerCase() === cleanEmail.toLowerCase())) {
+      throw new Error(`${cleanEmail} is already part of this workspace.`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const inviteCode = `ISL-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${params.role.slice(0, 3).toUpperCase()}`;
+    const hasImmediatePassword = Boolean(params.password && params.password.length >= 8);
+
+    const newMember: TeamMember = {
+      id: `USR-${Math.random().toString(36).slice(2, 9)}`,
+      workspace_id: wsId,
+      name: cleanName,
+      email: cleanEmail,
+      role: params.role,
+      status: hasImmediatePassword ? "Active" : "Invited",
+      joined_at: nowIso,
+      last_active: hasImmediatePassword ? nowIso : undefined,
+      invited_by: currentUser?.email || currentUser?.name || "Owner",
+    };
+
+    const newInvite: WorkspaceInvite = {
+      id: `INV-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      workspace_id: wsId,
+      workspace_name: currentUser?.company || "Island Bookkeeping",
+      email: cleanEmail,
+      name: cleanName,
+      role: params.role,
+      invite_code: inviteCode,
+      status: hasImmediatePassword ? "Accepted" : "Pending",
+      created_at: nowIso,
+      created_by: currentUser?.email || currentUser?.name || "Owner",
+    };
+
+    const updatedMembers = [...members, newMember];
+    localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    localStorage.setItem(WORKSPACE_INVITES_KEY, JSON.stringify([newInvite, ...allInvites]));
+
+    if (hasImmediatePassword && params.password) {
+      const users = dataService.getUsers();
+      const idx = users.findIndex((u: any) => u.email?.toLowerCase() === cleanEmail.toLowerCase());
+      const accountRecord = {
+        id: newMember.id,
+        name: cleanName,
+        company: currentUser?.company || "Island Bookkeeping",
+        role: params.role,
+        plan: currentUser?.plan || "Essential Monthly Bookkeeping",
+        email: cleanEmail,
+        password: params.password,
+        workspaceId: wsId,
+        authMode: "local",
+      };
+      if (idx >= 0) {
+        users[idx] = accountRecord;
+      } else {
+        users.push(accountRecord);
+      }
+      dataService.saveUsers(users);
+    }
+
+    saveWorkspaceSnapshot(wsId);
+
+    dataService.recordAuditLog({
+      category: "Team",
+      action: hasImmediatePassword ? "Team member provisioned" : "Team invitation created",
+      details: `${cleanName} (${cleanEmail}) added as ${params.role}`,
+      reference: inviteCode,
+      status: "Success",
+    });
+
+    dispatchDataSynced();
+    return { member: newMember, invite: newInvite };
+  },
+
+  acceptInviteByCode: (
+    code: string,
+    details: { name?: string; email: string; password?: string }
+  ): WorkspaceInvite => {
+    const invite = dataService.findInviteByCode(code);
+    if (!invite) {
+      throw new Error("Invalid or expired invite code. Please ask your workspace owner for a fresh code.");
+    }
+    if (invite.email.toLowerCase() !== details.email.trim().toLowerCase()) {
+      throw new Error(`This invite code was issued for ${invite.email}. Please sign up with that email address.`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    const updatedInvites = allInvites.map((item) =>
+      item.id === invite.id ? { ...item, status: "Accepted" as const } : item
+    );
+    localStorage.setItem(WORKSPACE_INVITES_KEY, JSON.stringify(updatedInvites));
+
+    // Update target workspace snapshot so the member shows Active
+    const store = safeParseJSON<Record<string, Record<string, string>>>(
+      localStorage.getItem(WORKSPACE_STORE_KEY),
+      {}
+    );
+    const wsSnapshot = store[invite.workspace_id] || {};
+    const existingMembers = safeParseJSON<TeamMember[]>(
+      wsSnapshot[STORAGE_KEYS.TEAM_MEMBERS] ?? localStorage.getItem(STORAGE_KEYS.TEAM_MEMBERS),
+      []
+    );
+
+    const updatedMembers = existingMembers.some(
+      (m) => m.email.toLowerCase() === invite.email.toLowerCase()
+    )
+      ? existingMembers.map((m) =>
+          m.email.toLowerCase() === invite.email.toLowerCase()
+            ? {
+                ...m,
+                name: details.name?.trim() || m.name,
+                status: "Active" as const,
+                last_active: nowIso,
+              }
+            : m
+        )
+      : [
+          ...existingMembers,
+          {
+            id: `USR-${Math.random().toString(36).slice(2, 9)}`,
+            workspace_id: invite.workspace_id,
+            name: details.name?.trim() || invite.name,
+            email: invite.email,
+            role: invite.role,
+            status: "Active" as const,
+            joined_at: nowIso,
+            last_active: nowIso,
+            invited_by: invite.created_by,
+          },
+        ];
+
+    wsSnapshot[STORAGE_KEYS.TEAM_MEMBERS] = JSON.stringify(updatedMembers);
+    store[invite.workspace_id] = wsSnapshot;
+    localStorage.setItem(WORKSPACE_STORE_KEY, JSON.stringify(store));
+
+    return { ...invite, status: "Accepted" };
+  },
+
+  updateTeamMemberRole: (memberId: string, newRole: WorkspaceRole): TeamMember[] => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can modify member roles.");
+    }
+    const members = dataService.getTeamMembers();
+    const target = members.find((m) => m.id === memberId);
+    if (!target) {
+      throw new Error("Team member not found.");
+    }
+    const activeOwners = members.filter((m) => m.role === "Owner" && m.status === "Active");
+    if (target.role === "Owner" && newRole !== "Owner" && activeOwners.length <= 1) {
+      throw new Error("At least one active Owner must remain in the workspace.");
+    }
+
+    const updatedMembers = members.map((m) =>
+      m.id === memberId ? { ...m, role: newRole } : m
+    );
+    localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+
+    const users = dataService.getUsers().map((u: any) =>
+      u.email?.toLowerCase() === target.email.toLowerCase() ? { ...u, role: newRole } : u
+    );
+    dataService.saveUsers(users);
+
+    const currentUser = dataService.getUser();
+    if (currentUser?.email?.toLowerCase() === target.email.toLowerCase()) {
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify({ ...currentUser, role: newRole }));
+    }
+
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Team",
+      action: "Member role updated",
+      details: `${target.name} (${target.email}) changed from ${target.role} to ${newRole}`,
+      reference: target.id,
+      status: "Info",
+    });
+
+    dispatchDataSynced();
+    return updatedMembers;
+  },
+
+  updateTeamMemberStatus: (
+    memberId: string,
+    status: "Active" | "Suspended"
+  ): TeamMember[] => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can update member access status.");
+    }
+    const currentUser = dataService.getUser();
+    const members = dataService.getTeamMembers();
+    const target = members.find((m) => m.id === memberId);
+    if (!target) {
+      throw new Error("Team member not found.");
+    }
+    if (currentUser?.email?.toLowerCase() === target.email.toLowerCase() && status === "Suspended") {
+      throw new Error("You cannot suspend your own active owner session.");
+    }
+    const activeOwners = members.filter((m) => m.role === "Owner" && m.status === "Active");
+    if (target.role === "Owner" && status === "Suspended" && activeOwners.length <= 1) {
+      throw new Error("At least one active Owner must remain active.");
+    }
+
+    const updatedMembers = members.map((m) =>
+      m.id === memberId ? { ...m, status } : m
+    );
+    localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Team",
+      action: status === "Suspended" ? "Member access suspended" : "Member access restored",
+      details: `${target.name} (${target.email}) status set to ${status}`,
+      reference: target.id,
+      status: status === "Suspended" ? "Warning" : "Success",
+    });
+
+    dispatchDataSynced();
+    return updatedMembers;
+  },
+
+  removeTeamMember: (memberId: string): TeamMember[] => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can remove team members.");
+    }
+    const currentUser = dataService.getUser();
+    const members = dataService.getTeamMembers();
+    const target = members.find((m) => m.id === memberId);
+    if (!target) {
+      throw new Error("Team member not found.");
+    }
+    if (currentUser?.email?.toLowerCase() === target.email.toLowerCase()) {
+      throw new Error("You cannot remove your own currently signed-in account.");
+    }
+    const activeOwners = members.filter((m) => m.role === "Owner" && m.status === "Active");
+    if (target.role === "Owner" && target.status === "Active" && activeOwners.length <= 1) {
+      throw new Error("Cannot remove the sole active Owner from the workspace.");
+    }
+
+    const updatedMembers = members.filter((m) => m.id !== memberId);
+    localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(updatedMembers));
+
+    const wsId = dataService.getWorkspaceId();
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    const updatedInvites = allInvites.map((inv) =>
+      inv.workspace_id === wsId &&
+      inv.email.toLowerCase() === target.email.toLowerCase() &&
+      inv.status === "Pending"
+        ? { ...inv, status: "Revoked" as const }
+        : inv
+    );
+    localStorage.setItem(WORKSPACE_INVITES_KEY, JSON.stringify(updatedInvites));
+    saveWorkspaceSnapshot(wsId);
+
+    dataService.recordAuditLog({
+      category: "Team",
+      action: "Team member removed",
+      details: `Removed ${target.name} (${target.email} · ${target.role}) from workspace`,
+      reference: target.id,
+      status: "Warning",
+    });
+
+    dispatchDataSynced();
+    return updatedMembers;
+  },
+
+  revokeInvite: (inviteId: string): WorkspaceInvite[] => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can revoke invitations.");
+    }
+    const wsId = dataService.getWorkspaceId();
+    const allInvites = safeParseJSON<WorkspaceInvite[]>(
+      localStorage.getItem(WORKSPACE_INVITES_KEY),
+      []
+    );
+    const target = allInvites.find((inv) => inv.id === inviteId && inv.workspace_id === wsId);
+    if (!target) return dataService.getWorkspaceInvites();
+
+    const updatedInvites = allInvites.map((inv) =>
+      inv.id === inviteId ? { ...inv, status: "Revoked" as const } : inv
+    );
+    localStorage.setItem(WORKSPACE_INVITES_KEY, JSON.stringify(updatedInvites));
+
+    const members = dataService.getTeamMembers();
+    const cleanedMembers = members.filter(
+      (m) => !(m.email.toLowerCase() === target.email.toLowerCase() && m.status === "Invited")
+    );
+    localStorage.setItem(STORAGE_KEYS.TEAM_MEMBERS, JSON.stringify(cleanedMembers));
+    saveWorkspaceSnapshot(wsId);
+
+    dataService.recordAuditLog({
+      category: "Team",
+      action: "Invitation revoked",
+      details: `Revoked pending invite for ${target.email}`,
+      reference: target.invite_code,
+      status: "Warning",
+    });
+
+    dispatchDataSynced();
+    return updatedInvites.filter((inv) => inv.workspace_id === wsId);
+  },
+
+  switchActiveMember: (memberId: string): any => {
+    if (!dataService.can("manage_team")) {
+      throw new Error("Only workspace Owners can switch active member sessions.");
+    }
+    const currentUser = dataService.getUser();
+    const wsId = dataService.getWorkspaceId();
+    const members = dataService.getTeamMembers();
+    const target = members.find((m) => m.id === memberId);
+    if (!target || target.status !== "Active") {
+      throw new Error("Select an active team member to switch into.");
+    }
+
+    const users = dataService.getUsers();
+    const matchedCred = users.find(
+      (u: any) => u.email?.toLowerCase() === target.email.toLowerCase()
+    );
+
+    const nextUser = {
+      id: target.id,
+      name: target.name,
+      email: target.email,
+      role: target.role,
+      company: currentUser?.company || "Island Bookkeeping",
+      plan: currentUser?.plan || "Essential Monthly Bookkeeping",
+      photo: target.photo || "",
+      workspaceId: wsId,
+      authMode: "local",
+      password: matchedCred?.password,
+    };
+
+    saveWorkspaceSnapshot(wsId);
+    dataService.recordAuditLog({
+      actor: currentUser?.email || currentUser?.name || "Owner",
+      category: "Auth",
+      action: "Workspace member session switched",
+      details: `Switched active browser session to ${target.name} (${target.role})`,
+      reference: target.id,
+      status: "Info",
+    });
+
+    return dataService.activateWorkspaceForUser(nextUser);
+  },
+
+  // --- Jamaican Tax & Payroll Compliance (GCT Form 4A, S01/S02, NIS/NHT) ---
+
+  getJamaicaCompliance: (): JamaicaComplianceState => {
+    const defaultProfile: JamaicaComplianceProfile = {
+      trn: "",
+      nisNumber: "",
+      nhtNumber: "",
+      gctNumber: "",
+      taxYear: "2026",
+      heartExempt: false,
+    };
+    const parsed = safeParseJSON<Partial<JamaicaComplianceState>>(
+      localStorage.getItem(STORAGE_KEYS.JAMAICA_COMPLIANCE),
+      {}
+    );
+    return {
+      profile: {
+        ...defaultProfile,
+        ...(parsed.profile || {}),
+      },
+      employees: Array.isArray(parsed.employees) ? parsed.employees : [],
+      payrollRuns: Array.isArray(parsed.payrollRuns) ? parsed.payrollRuns : [],
+      gctReturns: Array.isArray(parsed.gctReturns) ? parsed.gctReturns : [],
+    };
+  },
+
+  saveJamaicaComplianceProfile: (
+    profile: JamaicaComplianceProfile
+  ): JamaicaComplianceState => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can update TAJ registration details.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const updated: JamaicaComplianceState = {
+      ...current,
+      profile: {
+        ...current.profile,
+        ...profile,
+      },
+    };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updated));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action: "TAJ compliance profile updated",
+      details: `Tax Year ${updated.profile.taxYear} · TRN ${updated.profile.trn || "Not set"} · GCT ${updated.profile.gctNumber || "Not set"}`,
+      status: "Info",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  savePayrollEmployee: (employee: PayrollEmployee): JamaicaComplianceState => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can manage payroll employees.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const record: PayrollEmployee = {
+      ...employee,
+      id: employee.id || `EMP-${Math.random().toString(36).slice(2, 9)}`,
+      monthlyGross: Math.max(0, Number(employee.monthlyGross) || 0),
+    };
+    const idx = current.employees.findIndex((e) => e.id === record.id);
+    const employees =
+      idx > -1
+        ? current.employees.map((e, i) => (i === idx ? record : e))
+        : [...current.employees, record];
+
+    const updated: JamaicaComplianceState = { ...current, employees };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updated));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action: idx > -1 ? "Payroll employee updated" : "Payroll employee added",
+      details: `${record.name} · Gross J$${record.monthlyGross.toFixed(2)} (${record.status})`,
+      reference: record.id,
+      status: "Success",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  deletePayrollEmployee: (employeeId: string): JamaicaComplianceState => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can remove payroll employees.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const target = current.employees.find((e) => e.id === employeeId);
+    const employees = current.employees.filter((e) => e.id !== employeeId);
+    const updated: JamaicaComplianceState = { ...current, employees };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updated));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action: "Payroll employee removed",
+      details: `Removed ${target?.name || employeeId} from payroll roster`,
+      reference: employeeId,
+      status: "Warning",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  savePayrollRun: (run: PayrollRunRecord): JamaicaComplianceState => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can generate or update payroll runs.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const record: PayrollRunRecord = {
+      ...run,
+      id: run.id || `PR-${run.period}-${Math.random().toString(36).slice(2, 6)}`,
+    };
+    const idx = current.payrollRuns.findIndex(
+      (r) => r.id === record.id || r.period === record.period
+    );
+    const runs =
+      idx > -1
+        ? current.payrollRuns.map((r, i) => (i === idx ? record : r))
+        : [record, ...current.payrollRuns];
+    runs.sort((a, b) => b.period.localeCompare(a.period));
+
+    const updated: JamaicaComplianceState = { ...current, payrollRuns: runs };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updated));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action:
+        record.status === "Draft"
+          ? "Monthly payroll run generated"
+          : `S01 return marked ${record.status}`,
+      details: `Period ${record.period} · Gross J$${record.totals.grossPay.toFixed(2)} · S01 Total J$${record.totals.totalS01Remittance.toFixed(2)}`,
+      reference: record.id,
+      status: "Success",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
+
+  postPayrollRunToLedger: (runId: string): JournalEntry => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can post payroll to the General Ledger.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const run = current.payrollRuns.find((r) => r.id === runId);
+    if (!run) {
+      throw new Error("Payroll run not found.");
+    }
+
+    const existingEntries = dataService.getJournalEntries();
+    if (run.journalEntryId) {
+      const existing = existingEntries.find((je) => je.id === run.journalEntryId);
+      if (existing) return existing;
+    }
+
+    let accounts = dataService.getAccounts();
+    let cashAccount =
+      accounts.find((a) => a.code === "1000") ||
+      accounts.find((a) => a.type === "Asset");
+    if (!cashAccount) {
+      cashAccount = {
+        id: "1",
+        code: "1000",
+        name: "Cash",
+        type: "Asset",
+        balance: 0,
+        description: "Main operating cash account",
+      };
+      dataService.saveAccount(cashAccount);
+      accounts = dataService.getAccounts();
+    }
+
+    let payrollExpenseAccount =
+      accounts.find((a) => a.code === "5400") ||
+      accounts.find(
+        (a) => a.type === "Expense" && a.name.toLowerCase().includes("payroll")
+      );
+    if (!payrollExpenseAccount) {
+      payrollExpenseAccount = {
+        id: `ACC-5400-${Date.now()}`,
+        code: "5400",
+        name: "Payroll & Statutory Expense",
+        type: "Expense",
+        balance: 0,
+        description: "Gross salaries and employer NIS/NHT/EdTax/HEART contributions",
+      };
+      dataService.saveAccount(payrollExpenseAccount);
+      accounts = dataService.getAccounts();
+    }
+
+    let statutoryLiabilityAccount =
+      accounts.find((a) => a.code === "2200") ||
+      accounts.find(
+        (a) =>
+          a.type === "Liability" &&
+          (a.name.toLowerCase().includes("statutory") ||
+            a.name.toLowerCase().includes("taj"))
+      );
+    if (!statutoryLiabilityAccount) {
+      statutoryLiabilityAccount = {
+        id: `ACC-2200-${Date.now()}`,
+        code: "2200",
+        name: "Statutory Deductions Payable (TAJ)",
+        type: "Liability",
+        balance: 0,
+        description: "Combined PAYE, NIS, NHT, Education Tax, and HEART S01 payable",
+      };
+      dataService.saveAccount(statutoryLiabilityAccount);
+    }
+
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const grossDebit = round2(run.totals.grossPay);
+    const employerDebit = round2(run.totals.totalEmployerContributions);
+    const totalDebit = round2(grossDebit + employerDebit);
+    const statutoryCredit = round2(run.totals.totalS01Remittance);
+    // Ensure penny-exact double-entry balance
+    const cashCredit = round2(totalDebit - statutoryCredit);
+
+    const journalEntry: JournalEntry = {
+      id: `JE-PAY-${run.period}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
+      date: run.payDate || formatLocalDate(),
+      description: `Payroll & TAJ S01 Accrual (${run.period})`,
+      status: "Posted",
+      lines: [
+        {
+          id: `JL-1-${Date.now()}`,
+          account_id: payrollExpenseAccount.id,
+          debit: grossDebit,
+          credit: 0,
+          description: `Gross Salaries & Wages (${run.employees.length} employees)`,
+        },
+        ...(employerDebit > 0
+          ? [
+              {
+                id: `JL-2-${Date.now()}`,
+                account_id: payrollExpenseAccount.id,
+                debit: employerDebit,
+                credit: 0,
+                description: "Employer Statutory (NIS 3%, NHT 3%, EdTax 3.5%, HEART 3%)",
+              },
+            ]
+          : []),
+        {
+          id: `JL-3-${Date.now()}`,
+          account_id: cashAccount.id,
+          debit: 0,
+          credit: cashCredit,
+          description: `Net Payroll Disbursement (${run.period})`,
+        },
+        {
+          id: `JL-4-${Date.now()}`,
+          account_id: statutoryLiabilityAccount.id,
+          debit: 0,
+          credit: statutoryCredit,
+          description: `TAJ S01 Remittance Payable (Due ${run.dueDate})`,
+        },
+      ],
+    };
+
+    dataService.saveJournalEntry(journalEntry);
+
+    const updatedRuns = current.payrollRuns.map((r) =>
+      r.id === runId ? { ...r, journalEntryId: journalEntry.id } : r
+    );
+    const updatedState: JamaicaComplianceState = {
+      ...current,
+      payrollRuns: updatedRuns,
+    };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updatedState));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+    dispatchDataSynced();
+    return journalEntry;
+  },
+
+  saveGctReturn: (ret: GctReturnRecord): JamaicaComplianceState => {
+    if (!dataService.can("manage_ledger")) {
+      throw new Error("Only Owners or Accountants can save or file GCT Form 4A returns.");
+    }
+    const current = dataService.getJamaicaCompliance();
+    const record: GctReturnRecord = {
+      ...ret,
+      id: ret.id || `GCT4A-${ret.period}`,
+    };
+    const idx = current.gctReturns.findIndex(
+      (g) => g.id === record.id || g.period === record.period
+    );
+    const gctReturns =
+      idx > -1
+        ? current.gctReturns.map((g, i) => (i === idx ? record : g))
+        : [record, ...current.gctReturns];
+    gctReturns.sort((a, b) => b.period.localeCompare(a.period));
+
+    const updated: JamaicaComplianceState = { ...current, gctReturns };
+    localStorage.setItem(STORAGE_KEYS.JAMAICA_COMPLIANCE, JSON.stringify(updated));
+    saveWorkspaceSnapshot(dataService.getWorkspaceId());
+
+    dataService.recordAuditLog({
+      category: "Ledger",
+      action:
+        record.status === "Draft"
+          ? "GCT Form 4A draft saved"
+          : `GCT Form 4A marked ${record.status}`,
+      details: `Period ${record.period} · Net GCT J$${record.netGctPayable.toFixed(2)}`,
+      reference: record.id,
+      status: "Success",
+    });
+
+    dispatchDataSynced();
+    return updated;
+  },
 };
+
+
+

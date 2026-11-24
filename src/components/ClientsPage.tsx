@@ -55,7 +55,10 @@ export function ClientsPage({ onEdit }: { onEdit: (client: Client) => void }) {
     setSelectedClient(client);
   };
 
+  const canEdit = dataService.can('manage_transactions');
+
   const handleDelete = (id: string) => {
+    if (!canEdit) return;
     setClientToDelete(id);
     setIsDeleteConfirmOpen(true);
   };
@@ -202,28 +205,32 @@ export function ClientsPage({ onEdit }: { onEdit: (client: Client) => void }) {
                       {new Date(client.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-6 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEdit(client);
-                          }}
-                          className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
-                          title="Edit"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(client.id);
-                          }}
-                          className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
+                      {canEdit ? (
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEdit(client);
+                            }}
+                            className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
+                            title="Edit"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(client.id);
+                            }}
+                            className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                            title="Delete"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
+                      )}
                     </td>
                   </tr>
                 ))

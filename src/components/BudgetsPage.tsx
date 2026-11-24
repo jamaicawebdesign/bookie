@@ -76,7 +76,10 @@ export function BudgetsPage({ onEdit }: { onEdit: (budget: Budget) => void }) {
     }
   };
 
+  const canEdit = dataService.can('manage_transactions');
+
   const handleDelete = async (id: string) => {
+    if (!canEdit) return;
     setBudgetToDelete(id);
     setIsDeleteModalOpen(true);
   };
@@ -305,26 +308,28 @@ export function BudgetsPage({ onEdit }: { onEdit: (budget: Budget) => void }) {
                     </h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{budget.period} Limit</p>
                   </div>
-                    <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEdit(budget);
-                        }}
-                        className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(budget.id);
-                        }}
-                        className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEdit(budget);
+                          }}
+                          className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(budget.id);
+                          }}
+                          className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                 <div className="space-y-4">

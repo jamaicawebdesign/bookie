@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence, MotionConfig } from 'motion/react';
 import {
   ArrowRight,
   Check,
@@ -18,15 +19,20 @@ import {
   Phone,
   DatabaseBackup,
   UserCheck,
+  ArrowUp,
 } from 'lucide-react';
 import heroDashboardImg from '../assets/images/hero_bookkeeping_dashboard_1795317507415.jpg';
 import invoicingAgingImg from '../assets/images/feature_invoicing_aging_1795317508378.jpg';
 import budgetForecastImg from '../assets/images/feature_budget_forecast_1795317508018.jpg';
 import financialReportsImg from '../assets/images/feature_financial_reports_1795317507733.jpg';
+import servicesConsultationImg from '../assets/images/services_consultation_desk_1795480707725.jpg';
+import aboutTeamImg from '../assets/images/about_bookkeeping_team_1795480708629.jpg';
+import securityVaultImg from '../assets/images/security_vault_architecture_1795480709180.jpg';
+import proofBusinessImg from '../assets/images/proof_caribbean_business_1795480709390.jpg';
 import { cn } from '../lib/utils';
 
 interface LandingPageProps {
-  onGetStarted: () => void;
+  onGetStarted: (planName?: string) => void;
   onSignIn: () => void;
   onLaunchDemo?: () => void;
   isDemoAvailable?: boolean;
@@ -239,53 +245,53 @@ interface ServicePackage {
 
 const SERVICE_PACKAGES: ServicePackage[] = [
   {
-    id: 'starter',
+    id: 'essential',
     number: '01.',
-    name: 'Self-Managed Workspace',
-    tagline: 'For solo founders who prefer to manage their own books using structured cloud software.',
-    priceUsd: '$0',
-    priceJmd: 'J$0',
-    cadence: 'Free starter plan',
+    name: 'Essential Monthly Bookkeeping',
+    tagline: 'For solo founders and micro-businesses wanting accurate, stress-free monthly books.',
+    priceUsd: 'From $149',
+    priceJmd: 'From J$23,500',
+    cadence: 'per month · transparent volume pricing',
     ctaLabel: 'Get Started',
     ctaMode: 'workspace',
     features: [
-      'Double-entry Chart of Accounts & General Ledger',
-      'G.C.T.-ready client invoicing & payment tracking',
-      'Automated CSV & JSON bank statement cleaner',
-      'Instant Income Statement, Balance Sheet & Trial Balance',
+      'Up to 100 monthly transactions & 1 bank account reconciled',
+      'Monthly Profit & Loss, Balance Sheet & Trial Balance',
+      'G.C.T.-ready client invoicing & receipt organization',
+      'Full Island Bookkeeping cloud ledger workspace included',
     ],
   },
   {
     id: 'growth',
     number: '02.',
-    name: 'Monthly Core Bookkeeping',
-    tagline: 'For growing small businesses wanting accurate monthly books handled by specialists.',
-    priceUsd: 'From $149',
-    priceJmd: 'From J$23,500',
-    cadence: 'per month · transparent volume pricing',
+    name: 'Growth Bookkeeping & Tax Prep',
+    tagline: 'For growing small businesses needing reconciliations, AR/AP tracking, and G.C.T. prep.',
+    priceUsd: 'From $299',
+    priceJmd: 'From J$47,000',
+    cadence: 'per month · up to 3 accounts reconciled',
     recommended: true,
     ctaLabel: 'Book Free Consultation',
     ctaMode: 'consultation',
     features: [
-      'Up to 250 monthly bank & card transactions reconciled',
+      'Up to 300 monthly bank, card & merchant transactions',
+      'Accounts Receivable & Payable aging review every month',
       'G.C.T. input/output summary & filing prep schedule',
-      'Monthly Profit & Loss, Balance Sheet & AR/AP aging review',
-      'Full Island Bookkeeping cloud workspace & WhatsApp access',
+      'Cloud workspace access plus direct WhatsApp support',
     ],
   },
   {
     id: 'executive',
     number: '03.',
     name: 'Full-Service & Advisory',
-    tagline: 'For active multi-account companies needing weekly close, payables tracking, and catch-up support.',
-    priceUsd: 'From $349',
-    priceJmd: 'From J$55,000',
+    tagline: 'For active multi-account companies needing weekly close, payroll support, and catch-up help.',
+    priceUsd: 'From $499',
+    priceJmd: 'From J$78,500',
     cadence: 'per month · custom multi-entity scope',
     ctaLabel: 'Start Client Onboarding',
     ctaMode: 'onboarding',
     features: [
       'Unlimited reconciliations across bank, POS & eCommerce feeds',
-      'Weekly cash-flow snapshot & vendor bill scheduling',
+      'Payroll support, weekly cash-flow briefs & vendor scheduling',
       'Catch-up bookkeeping & direct coordination with your auditor',
       'Dedicated bookkeeper with priority WhatsApp & call check-ins',
     ],
@@ -429,10 +435,13 @@ const FAQS = [
     a: 'You never face surprise bills. During your free consultation, we confirm a flat monthly tier based on bank account count and transaction volume, and notify you in advance before any tier change.',
   },
   {
-    q: 'Can I use the software on my own without hiring a monthly bookkeeper?',
-    a: 'Yes. You can create a free Self-Managed Workspace anytime to issue invoices, clean CSV statements, and generate balanced financial statements yourself.',
+    q: 'Can I access the cloud ledger workspace alongside my monthly service?',
+    a: 'Yes. Every monthly bookkeeping package starting from $149/mo includes full access to your Island Bookkeeping cloud workspace so you can issue invoices, check live cash flow, and export reports anytime.',
   },
 ];
+
+const EASE_SETTLE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+const SECTION_VIEWPORT = { once: true, amount: 0.12 as const };
 
 export function LandingPage({
   onGetStarted,
@@ -444,6 +453,16 @@ export function LandingPage({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
   const [pricingCurrency, setPricingCurrency] = useState<'USD' | 'JMD'>('USD');
+  const [showBackToTop, setShowBackToTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowBackToTop(window.scrollY > 420);
+    };
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   useEffect(() => {
     const currentUrl = `${window.location.origin}${window.location.pathname}`;
@@ -469,7 +488,7 @@ export function LandingPage({
 
   // Consultation & Client Onboarding form state
   const [contactTab, setContactTab] = useState<'consultation' | 'onboarding'>('consultation');
-  const [selectedPackage, setSelectedPackage] = useState<string>('Monthly Core Bookkeeping');
+  const [selectedPackage, setSelectedPackage] = useState<string>('Essential Monthly Bookkeeping');
   const [inquiryName, setInquiryName] = useState('');
   const [inquiryBusiness, setInquiryBusiness] = useState('');
   const [inquiryEmail, setInquiryEmail] = useState('');
@@ -569,8 +588,17 @@ export function LandingPage({
     setInquirySubmitted(true);
   };
 
+  const scrollToTop = () => {
+    setMobileMenuOpen(false);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const scrollToSection = (id: string) => {
     setMobileMenuOpen(false);
+    if (id === 'top') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
     const el = document.getElementById(id);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -578,8 +606,9 @@ export function LandingPage({
   };
 
   return (
+    <MotionConfig reducedMotion="user">
     <div
-      className="min-h-screen bg-white text-black selection:bg-brand-100 selection:text-brand-900"
+      className="min-h-screen bg-white text-black selection:bg-brand-100 selection:text-brand-900 overflow-x-hidden"
       style={{ fontFamily: 'var(--font-landing)' }}
     >
       {/* Top Bar — 1 row, 3 clean horizontal zones */}
@@ -588,6 +617,10 @@ export function LandingPage({
           {/* Zone 1: Single-line Wordmark */}
           <a
             href="#top"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToTop();
+            }}
             className="flex items-center gap-2.5 whitespace-nowrap shrink-0 focus:outline-none"
           >
             <span className="w-8 h-8 rounded-lg jamaica-gradient flex items-center justify-center text-white font-extrabold text-sm tracking-tight">
@@ -604,8 +637,15 @@ export function LandingPage({
           {/* Zone 2: Primary Navigation (Desktop) */}
           <nav
             aria-label="Primary"
-            className="hidden md:flex items-center gap-7 text-sm font-semibold text-white"
+            className="hidden md:flex items-center gap-6 text-sm font-semibold text-white"
           >
+            <button
+              type="button"
+              onClick={scrollToTop}
+              className="whitespace-nowrap shrink-0 text-white hover:text-brand-400 hover:underline underline-offset-4 transition-colors cursor-pointer"
+            >
+              Home
+            </button>
             <button
               type="button"
               onClick={() => scrollToSection('services')}
@@ -647,7 +687,7 @@ export function LandingPage({
           <div className="flex items-center gap-3 shrink-0">
             <button
               type="button"
-              onClick={onGetStarted}
+              onClick={() => onGetStarted()}
               className="hidden sm:inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
               Get Started
@@ -666,69 +706,94 @@ export function LandingPage({
         </div>
 
         {/* Mobile Drawer */}
-        {mobileMenuOpen && (
-          <div className="md:hidden border-t border-white/15 bg-black px-4 py-4 space-y-2">
-            <button
-              type="button"
-              onClick={() => scrollToSection('services')}
-              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.18, ease: EASE_SETTLE }}
+              className="md:hidden border-t border-white/15 bg-black px-4 py-4 space-y-2"
             >
-              Services
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('dashboards')}
-              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
-            >
-              Dashboards
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('packages')}
-              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
-            >
-              Packages
-            </button>
-            <button
-              type="button"
-              onClick={() => scrollToSection('about')}
-              className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
-            >
-              About
-            </button>
-            <div className="pt-3 border-t border-white/15 flex items-center gap-3">
               <button
                 type="button"
-                onClick={onSignIn}
-                className="flex-1 py-2.5 text-sm font-semibold text-white border border-white/30 rounded-lg"
+                onClick={scrollToTop}
+                className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
               >
-                Sign In
+                Home
               </button>
               <button
                 type="button"
-                onClick={onGetStarted}
-                className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-500 rounded-lg"
+                onClick={() => scrollToSection('services')}
+                className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
               >
-                Get Started
+                Services
               </button>
-            </div>
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => scrollToSection('dashboards')}
+                className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
+              >
+                Dashboards
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('packages')}
+                className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
+              >
+                Packages
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollToSection('about')}
+                className="block w-full text-left py-2 text-sm font-semibold text-white hover:text-brand-400"
+              >
+                About
+              </button>
+              <div className="pt-3 border-t border-white/15 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onSignIn}
+                  className="flex-1 py-2.5 text-sm font-semibold text-white border border-white/30 rounded-lg"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onGetStarted()}
+                  className="flex-1 py-2.5 text-sm font-semibold text-white bg-brand-500 rounded-lg"
+                >
+                  Get Started
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </header>
 
       <main id="top">
-        {/* Hero Split Section */}
-        <section className="relative bg-slate-50/70 border-b border-slate-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-16 lg:pt-20 lg:pb-24">
+        {/* Hero Split Section — Deep Obsidian & Island Brand Glow */}
+        <section className="relative bg-slate-950 text-white overflow-hidden">
+          <div className="absolute inset-0 pointer-events-none opacity-35">
+            <div className="absolute -top-24 -right-24 w-[520px] h-[520px] rounded-full bg-brand-500/40 blur-[140px]" />
+            <div className="absolute bottom-12 -left-24 w-[420px] h-[420px] rounded-full bg-accent-500/20 blur-[130px]" />
+          </div>
+
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-14 pb-16 lg:pt-20 lg:pb-24">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-10 items-center">
               {/* Left Narrative Column */}
-              <div className="lg:col-span-5 space-y-7">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.45, ease: EASE_SETTLE }}
+                className="lg:col-span-5 space-y-7"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-400">
                   Confidential Bookkeeping · G.C.T. Ready · Cloud Ledger
                 </p>
 
                 <h1
-                  className="text-black font-extrabold tracking-tight leading-[1.08] text-balance"
+                  className="text-white font-extrabold tracking-tight leading-[1.08] text-balance"
                   style={{
                     fontFamily: 'var(--font-display)',
                     fontSize: 'clamp(2.1rem, 3.5vw, 3.25rem)',
@@ -737,7 +802,7 @@ export function LandingPage({
                   Focus on Growing Your Business. We&apos;ll Handle the Numbers.
                 </h1>
 
-                <p className="text-base sm:text-lg text-black leading-relaxed max-w-xl">
+                <p className="text-base sm:text-lg text-white/90 leading-relaxed max-w-xl">
                   Professional, reliable bookkeeping services designed to help small businesses stay
                   organized, understand their finances, and make smarter business decisions.
                 </p>
@@ -749,7 +814,7 @@ export function LandingPage({
                       setContactTab('consultation');
                       scrollToSection('contact');
                     }}
-                    className="inline-flex items-center gap-2.5 px-6 py-3.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+                    className="inline-flex items-center gap-2.5 px-6 py-3.5 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg shadow-lg shadow-brand-500/20 transition-colors cursor-pointer whitespace-nowrap"
                   >
                     Book Free Consultation
                     <ArrowRight size={16} />
@@ -759,15 +824,15 @@ export function LandingPage({
                     <button
                       type="button"
                       onClick={onLaunchDemo}
-                      className="inline-flex items-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-100 text-black border border-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                      className="inline-flex items-center gap-2 px-5 py-3.5 bg-white/10 hover:bg-white/20 text-white border border-white/25 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     >
                       Launch Interactive Demo
                     </button>
                   ) : (
                     <button
                       type="button"
-                      onClick={onGetStarted}
-                      className="inline-flex items-center gap-1.5 px-5 py-3.5 bg-white hover:bg-slate-100 text-black border border-slate-300 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
+                      onClick={() => onGetStarted()}
+                      className="inline-flex items-center gap-1.5 px-5 py-3.5 bg-white/10 hover:bg-accent-500 hover:text-black text-white border border-accent-400/50 text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                     >
                       Get Started
                       <ChevronRight size={16} />
@@ -775,58 +840,69 @@ export function LandingPage({
                   )}
                 </div>
 
-                <div className="pt-2 border-t border-slate-200 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-black">
-                  <span>01. Organized Books</span>
-                  <span className="text-black/40">/</span>
-                  <span>02. Tax-Ready Reports</span>
-                  <span className="text-black/40">/</span>
-                  <span>03. Strict Confidentiality</span>
+                <div className="pt-3 border-t border-white/15 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-white/90">
+                  <span>
+                    <span className="text-accent-400 font-mono mr-1">01.</span>Organized Books
+                  </span>
+                  <span className="text-white/30">/</span>
+                  <span>
+                    <span className="text-accent-400 font-mono mr-1">02.</span>Tax-Ready Reports
+                  </span>
+                  <span className="text-white/30">/</span>
+                  <span>
+                    <span className="text-accent-400 font-mono mr-1">03.</span>Strict Confidentiality
+                  </span>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Right Visual Showcase Column */}
-              <div className="lg:col-span-7">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-xl shadow-slate-900/5 overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between text-xs text-black">
-                    <span className="font-semibold text-black">
+              <motion.div
+                initial={{ opacity: 0, y: 22, scale: 0.985 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.08, ease: EASE_SETTLE }}
+                className="lg:col-span-7"
+              >
+                <div className="bg-slate-900 rounded-2xl border border-brand-500/40 shadow-2xl shadow-black/50 overflow-hidden">
+                  <div className="px-4 py-3 bg-black/60 border-b border-white/10 flex items-center justify-between text-xs text-white">
+                    <span className="font-semibold text-white">
                       Executive Financial Summary · Live Workspace Preview
                     </span>
-                    <span className="font-mono tabular-nums text-brand-700 font-medium">
+                    <span className="font-mono tabular-nums text-emerald-400 font-medium">
                       DR = CR · Synced
                     </span>
                   </div>
 
                   {failedImages['hero'] ? (
-                    <div className="aspect-video bg-slate-100 p-8 flex flex-col justify-between">
+                    <div className="aspect-video bg-slate-900 p-8 flex flex-col justify-between">
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="text-xs font-semibold text-black uppercase tracking-wider">
+                          <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider">
                             Executive Summary
                           </p>
-                          <p className="text-3xl font-bold font-mono tabular-nums text-black mt-1">
+                          <p className="text-3xl font-bold font-mono tabular-nums text-white mt-1">
                             $148,420.00
                           </p>
                         </div>
-                        <span className="text-sm font-semibold text-brand-600 font-mono">
+                        <span className="text-sm font-semibold text-emerald-400 font-mono">
                           34.2% Net Margin
                         </span>
                       </div>
                       <div className="grid grid-cols-3 gap-4 pt-6">
-                        <div className="bg-white p-4 rounded-xl border border-slate-200">
-                          <p className="text-xs text-black">Net Profit</p>
-                          <p className="text-lg font-bold font-mono tabular-nums text-black mt-1">
+                        <div className="bg-black/50 p-4 rounded-xl border border-white/15">
+                          <p className="text-xs text-white/75">Net Profit</p>
+                          <p className="text-lg font-bold font-mono tabular-nums text-white mt-1">
                             $50,810
                           </p>
                         </div>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200">
-                          <p className="text-xs text-black">AR Current</p>
-                          <p className="text-lg font-bold font-mono tabular-nums text-brand-600 mt-1">
+                        <div className="bg-black/50 p-4 rounded-xl border border-white/15">
+                          <p className="text-xs text-white/75">AR Current</p>
+                          <p className="text-lg font-bold font-mono tabular-nums text-emerald-400 mt-1">
                             $18,450
                           </p>
                         </div>
-                        <div className="bg-white p-4 rounded-xl border border-slate-200">
-                          <p className="text-xs text-black">G.C.T. Payable</p>
-                          <p className="text-lg font-bold font-mono tabular-nums text-black mt-1">
+                        <div className="bg-black/50 p-4 rounded-xl border border-white/15">
+                          <p className="text-xs text-white/75">G.C.T. Payable</p>
+                          <p className="text-lg font-bold font-mono tabular-nums text-accent-400 mt-1">
                             $4,120
                           </p>
                         </div>
@@ -842,60 +918,104 @@ export function LandingPage({
                     />
                   )}
 
-                  <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 grid grid-cols-3 gap-4 text-xs">
+                  <div className="px-5 py-3.5 bg-brand-900/70 border-t border-white/10 grid grid-cols-3 gap-4 text-xs">
                     <div>
-                      <span className="text-black block">Avg. Monthly Close</span>
-                      <span className="font-mono tabular-nums font-semibold text-black text-sm">
+                      <span className="text-emerald-200 block">Avg. Monthly Close</span>
+                      <span className="font-mono tabular-nums font-semibold text-white text-sm">
                         4.2 hrs
                       </span>
                     </div>
                     <div>
-                      <span className="text-black block">Tax Rate Engine</span>
-                      <span className="font-mono tabular-nums font-semibold text-black text-sm">
+                      <span className="text-emerald-200 block">Tax Rate Engine</span>
+                      <span className="font-mono tabular-nums font-semibold text-accent-400 text-sm">
                         15% G.C.T. / Custom
                       </span>
                     </div>
                     <div>
-                      <span className="text-black block">Statement Formats</span>
-                      <span className="font-mono tabular-nums font-semibold text-black text-sm">
+                      <span className="text-emerald-200 block">Statement Formats</span>
+                      <span className="font-mono tabular-nums font-semibold text-white text-sm">
                         PDF · CSV · JSON
                       </span>
                     </div>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             </div>
           </div>
 
-          {/* Business Owner Benefits & Quantified Impact Strip */}
-          <div className="bg-white border-t border-slate-200">
+          {/* Business Owner Benefits Strip — Deep Emerald Band */}
+          <div className="relative bg-brand-800 border-t border-brand-600/60">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
-                {OWNER_BENEFITS.map((benefit) => (
-                  <div key={benefit.number} className="space-y-1.5">
-                    <span className="text-xs font-mono font-bold text-brand-700">
+                {OWNER_BENEFITS.map((benefit, idx) => (
+                  <motion.div
+                    key={benefit.number}
+                    initial={{ opacity: 0, y: 14 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={SECTION_VIEWPORT}
+                    transition={{ duration: 0.35, delay: idx * 0.05, ease: EASE_SETTLE }}
+                    className="space-y-1.5"
+                  >
+                    <span className="text-xs font-mono font-bold text-accent-400">
                       {benefit.number}
                     </span>
                     <h2
-                      className="text-sm font-extrabold text-black tracking-tight"
+                      className="text-sm font-extrabold text-white tracking-tight"
                       style={{ fontFamily: 'var(--font-display)' }}
                     >
                       {benefit.title}
                     </h2>
-                    <p className="text-xs text-black/80 leading-relaxed">{benefit.detail}</p>
-                  </div>
+                    <p className="text-xs text-emerald-50/90 leading-relaxed">{benefit.detail}</p>
+                  </motion.div>
                 ))}
               </div>
             </div>
           </div>
         </section>
 
-        {/* Core Bookkeeping Services Section */}
-        <section id="services" className="py-20 lg:py-24 bg-slate-50 border-b border-slate-200">
+        {/* Core Bookkeeping Services Section — Fresh Emerald Tint + Workspace Photography */}
+        <section id="services" className="py-20 lg:py-24 bg-emerald-50/55 border-b border-emerald-200/70">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-              {/* Left Sticky Intro Column */}
-              <div className="lg:col-span-4 lg:sticky lg:top-24 space-y-6">
+              {/* Left Sticky Intro & Photography Column */}
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, ease: EASE_SETTLE }}
+                className="lg:col-span-4 lg:sticky lg:top-24 space-y-6"
+              >
+                <div className="rounded-2xl overflow-hidden border border-emerald-900/15 shadow-lg relative bg-slate-900 group">
+                  {failedImages['services_desk'] ? (
+                    <div className="aspect-video bg-brand-900 p-6 flex flex-col justify-end text-white">
+                      <span className="text-xs font-mono text-accent-400 font-bold">
+                        Monthly Reconciliation Desk
+                      </span>
+                      <p className="text-sm font-semibold mt-1">
+                        Dedicated statement matching, ledger coding, and G.C.T. sign-off.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={servicesConsultationImg}
+                        alt="Bookkeeping desk with emerald ledger portfolio, reconciled monthly bank statements, and financial laptop display"
+                        referrerPolicy="no-referrer"
+                        onError={() => handleImageError('services_desk')}
+                        className="w-full h-auto aspect-video object-cover block transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-4">
+                        <p className="text-xs font-mono font-bold text-accent-400">
+                          Reconciled Every Month
+                        </p>
+                        <p className="text-xs font-semibold text-white mt-0.5">
+                          Dedicated ledger review &amp; G.C.T. schedule preparation
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
                     Bookkeeping Services
@@ -916,7 +1036,7 @@ export function LandingPage({
                 <div className="pt-2 space-y-3">
                   <button
                     type="button"
-                    onClick={() => selectServiceAndEnquire('Monthly Core Bookkeeping')}
+                    onClick={() => selectServiceAndEnquire('Essential Monthly Bookkeeping')}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap"
                   >
                     Book Free Consultation
@@ -934,14 +1054,18 @@ export function LandingPage({
                     </a>
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Right Structured Service Rows */}
-              <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl divide-y divide-slate-200">
-                {MAJOR_SERVICES.map((service) => (
-                  <div
+              <div className="lg:col-span-8 bg-white border border-emerald-200/90 rounded-2xl divide-y divide-emerald-100 shadow-sm overflow-hidden">
+                {MAJOR_SERVICES.map((service, idx) => (
+                  <motion.div
                     key={service.number}
-                    className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6"
+                    initial={{ opacity: 0, y: 14 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={SECTION_VIEWPORT}
+                    transition={{ duration: 0.35, delay: Math.min(idx * 0.05, 0.25), ease: EASE_SETTLE }}
+                    className="p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-6 hover:bg-emerald-50/40 transition-colors"
                   >
                     <div className="space-y-2 max-w-xl">
                       <div className="flex flex-wrap items-center gap-2 text-xs text-black/75">
@@ -977,17 +1101,23 @@ export function LandingPage({
                         <ArrowRight size={14} />
                       </button>
                     </div>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </div>
           </div>
         </section>
 
-        {/* Interactive Feature Dashboards Section */}
-        <section id="dashboards" className="py-20 lg:py-24 bg-white">
+        {/* Interactive Feature Dashboards Section — Warm Gold Tint */}
+        <section id="dashboards" className="py-20 lg:py-24 bg-accent-50/60 border-b border-amber-200/80">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-3xl mb-12">
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={SECTION_VIEWPORT}
+              transition={{ duration: 0.4, ease: EASE_SETTLE }}
+              className="max-w-3xl mb-12"
+            >
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
                 Product Workspaces
               </p>
@@ -1002,13 +1132,13 @@ export function LandingPage({
                 how invoicing, budget forecasting, and balanced financial statements connect to a
                 single ledger.
               </p>
-            </div>
+            </motion.div>
 
             {/* Interactive Module Selector Strip */}
             <div
               role="tablist"
               aria-label="Dashboard Workspaces"
-              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border border-slate-200 rounded-xl overflow-hidden bg-slate-50 mb-10"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border border-amber-200 rounded-xl overflow-hidden bg-white mb-10 shadow-sm"
             >
               {DASHBOARD_MODULES.map((mod) => {
                 const isActive = mod.id === activeModule.id;
@@ -1020,23 +1150,23 @@ export function LandingPage({
                     type="button"
                     onClick={() => setActiveModuleId(mod.id)}
                     className={cn(
-                      'text-left p-5 transition-colors border-b sm:border-b-0 sm:border-r last:border-r-0 border-slate-200 cursor-pointer focus:outline-none',
+                      'text-left p-5 transition-colors border-b sm:border-b-0 sm:border-r last:border-r-0 border-amber-200/70 cursor-pointer focus:outline-none',
                       isActive
-                        ? 'bg-white text-black shadow-[inset_0_-3px_0_0_#009B3A]'
-                        : 'text-black hover:bg-white/60'
+                        ? 'bg-black text-white shadow-[inset_0_-3px_0_0_#FED100]'
+                        : 'text-black hover:bg-amber-50/70'
                     )}
                   >
                     <div className="flex items-center justify-between text-xs font-mono mb-1.5">
-                      <span className={isActive ? 'text-brand-600 font-semibold' : 'text-black'}>
+                      <span className={isActive ? 'text-accent-400 font-semibold' : 'text-brand-700 font-semibold'}>
                         {mod.number}
                       </span>
                       {isActive && (
-                        <span className="text-[11px] font-sans font-semibold text-brand-700">
+                        <span className="text-[11px] font-sans font-semibold text-emerald-400">
                           Viewing
                         </span>
                       )}
                     </div>
-                    <p className="text-sm font-bold text-black">
+                    <p className={cn('text-sm font-bold', isActive ? 'text-white' : 'text-black')}>
                       {mod.label}
                     </p>
                   </button>
@@ -1044,115 +1174,139 @@ export function LandingPage({
               })}
             </div>
 
-            {/* Active Dashboard Showcase Panel */}
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center bg-slate-50 border border-slate-200 rounded-2xl p-6 sm:p-8 lg:p-10">
-              {/* Screenshot Frame */}
-              <div className="lg:col-span-7">
-                <div className="bg-white rounded-xl border border-slate-200 shadow-lg overflow-hidden">
-                  {failedImages[activeModule.id] ? (
-                    <div className="aspect-[4/3] bg-slate-100 p-8 flex flex-col justify-center items-start space-y-4">
-                      <span className="text-xs font-mono text-brand-700 font-semibold">
+            {/* Active Dashboard Showcase Panel — High-Contrast Obsidian Card */}
+            <div className="bg-slate-950 text-white border border-slate-800 rounded-2xl p-6 sm:p-8 lg:p-10 shadow-xl overflow-hidden">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={activeModule.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.22, ease: EASE_SETTLE }}
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center"
+                >
+                  {/* Screenshot Frame */}
+                  <div className="lg:col-span-7">
+                    <div className="bg-slate-900 rounded-xl border border-white/15 shadow-lg overflow-hidden">
+                      {failedImages[activeModule.id] ? (
+                        <div className="aspect-[4/3] bg-slate-900 p-8 flex flex-col justify-center items-start space-y-4">
+                          <span className="text-xs font-mono text-accent-400 font-semibold">
+                            {activeModule.number} {activeModule.label}
+                          </span>
+                          <p className="text-xl font-bold text-white">{activeModule.title}</p>
+                          <p className="text-sm text-white/85">{activeModule.summary}</p>
+                          <div className="pt-2 font-mono text-2xl font-bold text-emerald-400">
+                            {activeModule.keyMetricValue}
+                          </div>
+                        </div>
+                      ) : (
+                        <img
+                          src={activeModule.image}
+                          alt={activeModule.imageAlt}
+                          referrerPolicy="no-referrer"
+                          onError={() => handleImageError(activeModule.id)}
+                          className="w-full h-auto aspect-[4/3] object-cover block"
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Detail Column */}
+                  <div className="lg:col-span-5 space-y-6">
+                    <div>
+                      <span className="text-xs font-mono font-semibold text-accent-400">
                         {activeModule.number} {activeModule.label}
                       </span>
-                      <p className="text-xl font-bold text-black">{activeModule.title}</p>
-                      <p className="text-sm text-black">{activeModule.summary}</p>
-                      <div className="pt-2 font-mono text-2xl font-bold text-brand-600">
-                        {activeModule.keyMetricValue}
-                      </div>
+                      <h3
+                        className="mt-2 text-2xl sm:text-3xl font-extrabold text-white tracking-tight leading-tight"
+                        style={{ fontFamily: 'var(--font-display)' }}
+                      >
+                        {activeModule.title}
+                      </h3>
+                      <p className="mt-3 text-sm sm:text-base text-white/85 leading-relaxed">
+                        {activeModule.summary}
+                      </p>
                     </div>
-                  ) : (
-                    <img
-                      src={activeModule.image}
-                      alt={activeModule.imageAlt}
-                      referrerPolicy="no-referrer"
-                      onError={() => handleImageError(activeModule.id)}
-                      className="w-full h-auto aspect-[4/3] object-cover block"
-                    />
-                  )}
-                </div>
-              </div>
 
-              {/* Detail Column */}
-              <div className="lg:col-span-5 space-y-6">
-                <div>
-                  <span className="text-xs font-mono font-semibold text-brand-700">
-                    {activeModule.number} {activeModule.label}
-                  </span>
-                  <h3
-                    className="mt-2 text-2xl sm:text-3xl font-extrabold text-black tracking-tight leading-tight"
-                    style={{ fontFamily: 'var(--font-display)' }}
-                  >
-                    {activeModule.title}
-                  </h3>
-                  <p className="mt-3 text-sm sm:text-base text-black leading-relaxed">
-                    {activeModule.summary}
-                  </p>
-                </div>
+                    {/* Key Metric Box */}
+                    <div className="bg-black/60 border border-brand-500/40 rounded-xl p-4">
+                      <div className="flex items-baseline justify-between gap-4">
+                        <span className="text-xs font-medium text-white/85">
+                          {activeModule.keyMetricLabel}
+                        </span>
+                        <span className="text-lg font-bold font-mono tabular-nums text-emerald-400">
+                          {activeModule.keyMetricValue}
+                        </span>
+                      </div>
+                      <p className="mt-1.5 text-xs text-white/75">{activeModule.keyMetricNote}</p>
+                    </div>
 
-                {/* Key Metric Box */}
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
-                  <div className="flex items-baseline justify-between gap-4">
-                    <span className="text-xs font-medium text-black">
-                      {activeModule.keyMetricLabel}
-                    </span>
-                    <span className="text-lg font-bold font-mono tabular-nums text-brand-700">
-                      {activeModule.keyMetricValue}
-                    </span>
+                    {/* Numbered Outcomes */}
+                    <ul className="space-y-3">
+                      {activeModule.outcomes.map((item, idx) => (
+                        <li key={item} className="flex items-start gap-3 text-sm text-white/90">
+                          <span className="font-mono text-xs font-semibold text-accent-400 mt-0.5 shrink-0">
+                            0{idx + 1}.
+                          </span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => onGetStarted()}
+                        className="inline-flex items-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
+                      >
+                        Open {activeModule.label} in Workspace
+                        <ArrowUpRight size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <p className="mt-1.5 text-xs text-black">{activeModule.keyMetricNote}</p>
-                </div>
-
-                {/* Numbered Outcomes */}
-                <ul className="space-y-3">
-                  {activeModule.outcomes.map((item, idx) => (
-                    <li key={item} className="flex items-start gap-3 text-sm text-black">
-                      <span className="font-mono text-xs font-semibold text-brand-700 mt-0.5 shrink-0">
-                        0{idx + 1}.
-                      </span>
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={onGetStarted}
-                    className="inline-flex items-center gap-2 px-5 py-3 bg-black hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
-                  >
-                    Open {activeModule.label} in Workspace
-                    <ArrowUpRight size={16} />
-                  </button>
-                </div>
-              </div>
+                </motion.div>
+              </AnimatePresence>
             </div>
           </div>
         </section>
 
-        {/* Asymmetric Capabilities Bento */}
-        <section id="capabilities" className="py-20 lg:py-24 bg-slate-50 border-y border-slate-200">
+        {/* Asymmetric Capabilities Bento — Deep Forest Emerald Section */}
+        <section id="capabilities" className="py-20 lg:py-24 bg-brand-900 text-white border-b border-brand-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-12">
+            <motion.div
+              initial={{ opacity: 0, y: 18 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={SECTION_VIEWPORT}
+              transition={{ duration: 0.4, ease: EASE_SETTLE }}
+              className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-12"
+            >
               <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-400 mb-3">
                   Core Infrastructure
                 </p>
                 <h2
-                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight text-balance"
                   style={{ fontFamily: 'var(--font-display)' }}
                 >
                   Built for clean imports, exact taxes, and strict financial controls.
                 </h2>
               </div>
-              <p className="text-sm text-black max-w-md">
+              <p className="text-sm text-emerald-100/90 max-w-md">
                 Every capability writes straight to your Chart of Accounts—eliminating manual
                 double-entry errors between sales, bills, and tax periods.
               </p>
-            </div>
+            </motion.div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Feature 1 — Wide Dark Contrast Card */}
-              <div className="lg:col-span-2 bg-slate-950 text-white rounded-2xl p-7 sm:p-9 flex flex-col justify-between gap-8">
+              {/* Feature 1 — Wide Obsidian Contrast Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                whileHover={{ y: -3 }}
+                transition={{ duration: 0.35, ease: EASE_SETTLE }}
+                className="lg:col-span-2 bg-black text-white border border-white/15 rounded-2xl p-7 sm:p-9 flex flex-col justify-between gap-8"
+              >
                 <div className="space-y-4 max-w-2xl">
                   <div className="flex items-center gap-2.5 text-xs font-semibold text-accent-400">
                     <FileSpreadsheet size={16} />
@@ -1204,10 +1358,17 @@ export function LandingPage({
                     </table>
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
-              {/* Feature 2 — G.C.T. & Tax Engine */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-7 flex flex-col justify-between gap-6">
+              {/* Feature 2 — G.C.T. & Tax Engine (Crisp White Contrast Card) */}
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                whileHover={{ y: -3 }}
+                transition={{ duration: 0.35, delay: 0.06, ease: EASE_SETTLE }}
+                className="bg-white text-black border border-brand-200 rounded-2xl p-7 flex flex-col justify-between gap-6"
+              >
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-brand-700">
                     <Receipt size={16} />
@@ -1224,7 +1385,7 @@ export function LandingPage({
                     multi-item invoices, and track collected output tax separately from net revenue.
                   </p>
                 </div>
-                <div className="border-t border-slate-100 pt-4 space-y-2 text-xs font-mono tabular-nums">
+                <div className="border-t border-slate-200 pt-4 space-y-2 text-xs font-mono tabular-nums">
                   <div className="flex justify-between text-black">
                     <span>Subtotal (Services)</span>
                     <span>$12,400.00</span>
@@ -1233,17 +1394,24 @@ export function LandingPage({
                     <span>G.C.T. (15.0%)</span>
                     <span>$1,860.00</span>
                   </div>
-                  <div className="flex justify-between font-bold text-black pt-1 border-t border-slate-100">
+                  <div className="flex justify-between font-bold text-black pt-1 border-t border-slate-200">
                     <span>Total Receivable</span>
-                    <span>$14,260.00</span>
+                    <span className="text-brand-700">$14,260.00</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
-              {/* Feature 3 — Double-Entry & Chart of Accounts */}
-              <div className="bg-white border border-slate-200 rounded-2xl p-7 flex flex-col justify-between gap-6">
+              {/* Feature 3 — Double-Entry & Chart of Accounts (Warm Gold Card) */}
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                whileHover={{ y: -3 }}
+                transition={{ duration: 0.35, delay: 0.1, ease: EASE_SETTLE }}
+                className="bg-accent-50 text-black border border-amber-200 rounded-2xl p-7 flex flex-col justify-between gap-6"
+              >
                 <div className="space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-brand-700">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-amber-800">
                     <Scale size={16} />
                     <span>Chart of Accounts</span>
                   </div>
@@ -1258,10 +1426,10 @@ export function LandingPage({
                     account codes. Unbalanced journal entries are blocked before posting.
                   </p>
                 </div>
-                <div className="border-t border-slate-100 pt-4 text-xs text-black space-y-1.5 font-mono">
+                <div className="border-t border-amber-200/80 pt-4 text-xs text-black space-y-1.5 font-mono">
                   <div className="flex justify-between">
                     <span>1010 · Cash at Bank</span>
-                    <span className="text-emerald-700 font-semibold">DR $14,260</span>
+                    <span className="text-brand-700 font-semibold">DR $14,260</span>
                   </div>
                   <div className="flex justify-between">
                     <span>4000 · Service Revenue</span>
@@ -1272,10 +1440,17 @@ export function LandingPage({
                     <span className="text-black font-semibold">CR $1,860</span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
               {/* Feature 4 — Wide AP, Recurring Bills & Client Directory */}
-              <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-7 sm:p-9 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                whileHover={{ y: -3 }}
+                transition={{ duration: 0.35, delay: 0.14, ease: EASE_SETTLE }}
+                className="lg:col-span-2 bg-white text-black border border-brand-200 rounded-2xl p-7 sm:p-9 grid grid-cols-1 md:grid-cols-2 gap-8 items-center"
+              >
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-brand-700">
                     <Clock size={16} />
@@ -1294,10 +1469,10 @@ export function LandingPage({
                   </p>
                 </div>
 
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-3 text-xs">
-                  <div className="flex items-center justify-between font-semibold text-black pb-2 border-b border-slate-200">
+                <div className="bg-emerald-50/75 border border-emerald-200 rounded-xl p-5 space-y-3 text-xs">
+                  <div className="flex items-center justify-between font-semibold text-black pb-2 border-b border-emerald-200">
                     <span>Working Capital Snapshot</span>
-                    <span className="font-mono text-brand-700">Net +$26,890</span>
+                    <span className="font-mono text-brand-700 font-bold">Net +$26,890</span>
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-black">Accounts Receivable (Current)</span>
@@ -1313,12 +1488,12 @@ export function LandingPage({
                   </div>
                   <div className="flex items-center justify-between">
                     <span className="text-black">Recurring Operating Commitments</span>
-                    <span className="font-mono tabular-nums font-semibold text-amber-700">
+                    <span className="font-mono tabular-nums font-semibold text-amber-800">
                       6 Active Schedules
                     </span>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             </div>
           </div>
         </section>
@@ -1347,7 +1522,7 @@ export function LandingPage({
               <div
                 role="group"
                 aria-label="Pricing display currency"
-                className="inline-flex items-center p-1 bg-slate-100 border border-slate-200 rounded-lg self-start lg:self-auto shrink-0"
+                className="inline-flex items-center p-1 bg-emerald-50 border border-emerald-200 rounded-lg self-start lg:self-auto shrink-0"
               >
                 <button
                   type="button"
@@ -1355,8 +1530,8 @@ export function LandingPage({
                   className={cn(
                     'px-3.5 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0',
                     pricingCurrency === 'USD'
-                      ? 'bg-black text-white'
-                      : 'text-black hover:bg-white/70'
+                      ? 'bg-brand-600 text-white'
+                      : 'text-black hover:bg-white/80'
                   )}
                 >
                   USD ($)
@@ -1367,8 +1542,8 @@ export function LandingPage({
                   className={cn(
                     'px-3.5 py-1.5 text-xs font-bold rounded-md transition-colors cursor-pointer whitespace-nowrap shrink-0',
                     pricingCurrency === 'JMD'
-                      ? 'bg-black text-white'
-                      : 'text-black hover:bg-white/70'
+                      ? 'bg-brand-600 text-white'
+                      : 'text-black hover:bg-white/80'
                   )}
                 >
                   JMD (J$)
@@ -1377,16 +1552,23 @@ export function LandingPage({
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {SERVICE_PACKAGES.map((pkg) => {
+              {SERVICE_PACKAGES.map((pkg, idx) => {
                 const displayPrice = pricingCurrency === 'USD' ? pkg.priceUsd : pkg.priceJmd;
                 return (
-                  <article
+                  <motion.article
                     key={pkg.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={SECTION_VIEWPORT}
+                    whileHover={{ y: -4 }}
+                    transition={{ duration: 0.35, delay: idx * 0.08, ease: EASE_SETTLE }}
                     className={cn(
                       'rounded-2xl p-7 sm:p-8 flex flex-col justify-between gap-8 border',
                       pkg.recommended
-                        ? 'bg-slate-950 text-white border-slate-900'
-                        : 'bg-slate-50 text-black border-slate-200'
+                        ? 'bg-slate-950 text-white border-brand-500 shadow-xl'
+                        : pkg.id === 'essential'
+                          ? 'bg-emerald-50/75 text-black border-emerald-200'
+                          : 'bg-amber-50/65 text-black border-amber-200'
                     )}
                   >
                     <div className="space-y-6">
@@ -1423,12 +1605,19 @@ export function LandingPage({
                           pkg.recommended ? 'border-slate-800' : 'border-slate-200'
                         )}
                       >
-                        <p
-                          className="text-3xl font-extrabold font-mono tabular-nums tracking-tight"
-                          style={{ fontFamily: 'var(--font-display)' }}
-                        >
-                          {displayPrice}
-                        </p>
+                        <AnimatePresence mode="wait">
+                          <motion.p
+                            key={displayPrice}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6 }}
+                            transition={{ duration: 0.16, ease: EASE_SETTLE }}
+                            className="text-3xl font-extrabold font-mono tabular-nums tracking-tight"
+                            style={{ fontFamily: 'var(--font-display)' }}
+                          >
+                            {displayPrice}
+                          </motion.p>
+                        </AnimatePresence>
                         <p
                           className={cn(
                             'text-xs mt-1',
@@ -1457,26 +1646,40 @@ export function LandingPage({
                       </ul>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (pkg.ctaMode === 'workspace') {
-                          onGetStarted();
-                        } else {
-                          selectPackageAndScroll(pkg.name, pkg.ctaMode);
-                        }
-                      }}
-                      className={cn(
-                        'w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-lg text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap',
-                        pkg.recommended
-                          ? 'bg-brand-500 hover:bg-brand-600 text-white'
-                          : 'bg-black hover:bg-brand-600 text-white'
+                    <div className="space-y-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (pkg.ctaMode === 'workspace') {
+                            onGetStarted(pkg.name);
+                          } else {
+                            selectPackageAndScroll(pkg.name, pkg.ctaMode);
+                          }
+                        }}
+                        className={cn(
+                          'w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-lg text-sm font-semibold transition-colors cursor-pointer whitespace-nowrap',
+                          pkg.recommended
+                            ? 'bg-brand-500 hover:bg-brand-600 text-white'
+                            : 'bg-black hover:bg-brand-600 text-white'
+                        )}
+                      >
+                        {pkg.ctaLabel}
+                        <ArrowRight size={16} />
+                      </button>
+                      {pkg.ctaMode !== 'workspace' && (
+                        <button
+                          type="button"
+                          onClick={() => onGetStarted(pkg.name)}
+                          className={cn(
+                            'w-full text-center text-xs font-semibold hover:underline underline-offset-4 py-1 transition-colors cursor-pointer',
+                            pkg.recommended ? 'text-white/85 hover:text-white' : 'text-black/75 hover:text-brand-700'
+                          )}
+                        >
+                          Or sign up directly with this plan →
+                        </button>
                       )}
-                    >
-                      {pkg.ctaLabel}
-                      <ArrowRight size={16} />
-                    </button>
-                  </article>
+                    </div>
+                  </motion.article>
                 );
               })}
             </div>
@@ -1498,43 +1701,88 @@ export function LandingPage({
           </div>
         </section>
 
-        {/* About the Business & Confidentiality Standards */}
-        <section id="about" className="py-20 lg:py-24 bg-slate-50 border-t border-slate-200">
+        {/* About the Business & Confidentiality Standards — Emerald Brand Surface + Team Photography */}
+        <section id="about" className="py-20 lg:py-24 bg-brand-50 border-t border-brand-200/70">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-start">
-              <div className="lg:col-span-5 space-y-5">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
-                  About Island Bookkeeping
-                </p>
-                <h2
-                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
-                  style={{ fontFamily: 'var(--font-display)' }}
-                >
-                  Built on trust, confidentiality, and dependable numbers.
-                </h2>
-                <p className="text-sm sm:text-base text-black leading-relaxed">
-                  Handing over your bank statements, revenue figures, and tax obligations requires
-                  complete confidence. Island Bookkeeping pairs experienced small-business
-                  bookkeeping workflows with disciplined double-entry cloud software—so owners in
-                  Jamaica and across remote teams always know where their business stands.
-                </p>
-
-                <div className="pt-2 grid grid-cols-2 gap-6 border-t border-slate-200">
-                  {QUANTIFIED_IMPACT.slice(0, 2).map((stat) => (
-                    <div key={stat.value} className="space-y-1">
-                      <p
-                        className="text-2xl font-extrabold font-mono tabular-nums text-black"
-                        style={{ fontFamily: 'var(--font-display)' }}
-                      >
-                        {stat.value}
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, ease: EASE_SETTLE }}
+                className="lg:col-span-5 space-y-6"
+              >
+                <div className="rounded-2xl overflow-hidden border border-brand-200 shadow-md relative bg-brand-900 group">
+                  {failedImages['about_team'] ? (
+                    <div className="aspect-[4/3] bg-brand-900 p-8 flex flex-col justify-end text-white">
+                      <span className="text-xs font-mono font-bold text-accent-400">
+                        Kingston &amp; Remote Advisory
+                      </span>
+                      <p className="text-lg font-bold mt-1">
+                        Accountant-led monthly reviews with real human communication.
                       </p>
-                      <p className="text-xs text-black/80 leading-snug">{stat.label}</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={aboutTeamImg}
+                        alt="Island Bookkeeping financial advisor reviewing monthly growth and financial records with a Caribbean small business owner"
+                        referrerPolicy="no-referrer"
+                        onError={() => handleImageError('about_team')}
+                        className="w-full h-auto aspect-[4/3] object-cover block transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-5">
+                        <p className="text-xs font-mono font-bold text-accent-400">
+                          Human Bookkeepers + Cloud Software
+                        </p>
+                        <p className="text-xs sm:text-sm font-semibold text-white mt-0.5">
+                          Built for Caribbean &amp; remote small business owners
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
 
-              <div className="lg:col-span-7 divide-y divide-slate-200 border-t border-b border-slate-200 bg-white rounded-2xl px-6 sm:px-8">
+                <div className="space-y-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+                    About Island Bookkeeping
+                  </p>
+                  <h2
+                    className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                    style={{ fontFamily: 'var(--font-display)' }}
+                  >
+                    Built on trust, confidentiality, and dependable numbers.
+                  </h2>
+                  <p className="text-sm sm:text-base text-black leading-relaxed">
+                    Handing over your bank statements, revenue figures, and tax obligations requires
+                    complete confidence. Island Bookkeeping pairs experienced small-business
+                    bookkeeping workflows with disciplined double-entry cloud software—so owners in
+                    Jamaica and across remote teams always know where their business stands.
+                  </p>
+
+                  <div className="pt-3 grid grid-cols-2 gap-6 border-t border-brand-200">
+                    {QUANTIFIED_IMPACT.slice(0, 2).map((stat) => (
+                      <div key={stat.value} className="space-y-1">
+                        <p
+                          className="text-2xl font-extrabold font-mono tabular-nums text-brand-700"
+                          style={{ fontFamily: 'var(--font-display)' }}
+                        >
+                          {stat.value}
+                        </p>
+                        <p className="text-xs text-black/85 leading-snug">{stat.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, delay: 0.08, ease: EASE_SETTLE }}
+                className="lg:col-span-7 divide-y divide-emerald-100 border border-emerald-200/80 bg-white rounded-2xl px-6 sm:px-8 shadow-sm"
+              >
                 {TRUST_PILLARS.map((pillar) => (
                   <div key={pillar.number} className="py-6 space-y-2">
                     <div className="flex items-center gap-3">
@@ -1551,12 +1799,18 @@ export function LandingPage({
                     <p className="text-sm text-black leading-relaxed pl-7">{pillar.detail}</p>
                   </div>
                 ))}
-              </div>
+              </motion.div>
             </div>
 
             {/* Three-Step Close Rhythm */}
-            <div id="workflow" className="mt-16 pt-12 border-t border-slate-200">
-              <div className="max-w-2xl mb-10">
+            <div id="workflow" className="mt-16 pt-12 border-t border-brand-200/80">
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.4, ease: EASE_SETTLE }}
+                className="max-w-2xl mb-10"
+              >
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-2">
                   Simple Onboarding & Monthly Rhythm
                 </p>
@@ -1566,14 +1820,22 @@ export function LandingPage({
                 >
                   From scattered spreadsheets to organized monthly books in three steps.
                 </h3>
-              </div>
+              </motion.div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {WORKFLOW_STEPS.map((item) => (
-                  <div key={item.step} className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {WORKFLOW_STEPS.map((item, idx) => (
+                  <motion.div
+                    key={item.step}
+                    initial={{ opacity: 0, y: 18 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={SECTION_VIEWPORT}
+                    whileHover={{ y: -3 }}
+                    transition={{ duration: 0.35, delay: idx * 0.08, ease: EASE_SETTLE }}
+                    className="bg-white border border-emerald-200/80 rounded-2xl p-6 space-y-3"
+                  >
                     <div className="flex items-center justify-between text-xs font-mono">
                       <span className="text-brand-600 font-bold text-sm">{item.step}</span>
-                      <span className="text-black font-medium">{item.timing}</span>
+                      <span className="text-amber-800 font-semibold">{item.timing}</span>
                     </div>
                     <h4
                       className="text-lg font-bold text-black"
@@ -1582,77 +1844,134 @@ export function LandingPage({
                       {item.title}
                     </h4>
                     <p className="text-sm text-black leading-relaxed">{item.detail}</p>
-                  </div>
+                  </motion.div>
                 ))}
               </div>
             </div>
           </div>
         </section>
 
-        {/* Trust & Security Section */}
-        <section id="security" className="py-20 lg:py-24 bg-white border-t border-slate-200">
+        {/* Trust & Security Section — Deep Obsidian Architectural Showcase */}
+        <section id="security" className="py-20 lg:py-24 bg-slate-950 text-white border-t border-slate-800">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-12">
-              <div className="max-w-2xl">
-                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center mb-12">
+              <motion.div
+                initial={{ opacity: 0, x: -16 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, ease: EASE_SETTLE }}
+                className="lg:col-span-6 space-y-4"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-400">
                   Trust &amp; Security
                 </p>
                 <h2
-                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight text-balance"
                   style={{ fontFamily: 'var(--font-display)' }}
                 >
                   Your financial records stay encrypted, backed up, and strictly confidential.
                 </h2>
-              </div>
-              <p className="text-sm text-black max-w-md leading-relaxed">
-                Small business owners trust us with sensitive bank, payroll, and tax records—every
-                layer of Island Bookkeeping is structured to protect your privacy.
-              </p>
+                <p className="text-sm sm:text-base text-white/85 leading-relaxed">
+                  Small business owners trust us with sensitive bank, payroll, and tax records—every
+                  layer of Island Bookkeeping is structured to protect your privacy and eliminate
+                  unauthorized exposure.
+                </p>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: 16 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, delay: 0.06, ease: EASE_SETTLE }}
+                className="lg:col-span-6"
+              >
+                <div className="rounded-2xl overflow-hidden border border-brand-500/35 bg-black relative shadow-2xl group">
+                  {failedImages['security_vault'] ? (
+                    <div className="aspect-video bg-slate-900 p-8 flex flex-col justify-end">
+                      <span className="text-xs font-mono font-bold text-accent-400">
+                        TLS 1.3 + AES-256 Protected Storage
+                      </span>
+                      <p className="text-lg font-bold text-white mt-1">
+                        Row-level tenant isolation &amp; automated daily cloud backups.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={securityVaultImg}
+                        alt="Architectural dark slate and emerald glass financial vault symbolizing enterprise data encryption and confidentiality"
+                        referrerPolicy="no-referrer"
+                        onError={() => handleImageError('security_vault')}
+                        className="w-full h-auto aspect-video object-cover block transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/45 to-transparent p-5">
+                        <p className="text-xs font-mono font-bold text-accent-400">
+                          Zero Shared Ledgers · Daily Backups
+                        </p>
+                        <p className="text-xs sm:text-sm font-semibold text-white mt-0.5">
+                          Encrypted in transit and at rest with strict account-level isolation
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {TRUST_SECURITY_ITEMS.map((item) => {
+              {TRUST_SECURITY_ITEMS.map((item, idx) => {
                 const IconComponent = item.icon;
                 return (
-                  <article
+                  <motion.article
                     key={item.number}
-                    className="bg-slate-50 border border-slate-200 rounded-2xl p-7 flex flex-col justify-between gap-6"
+                    initial={{ opacity: 0, y: 18 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={SECTION_VIEWPORT}
+                    whileHover={{ y: -4 }}
+                    transition={{ duration: 0.35, delay: idx * 0.08, ease: EASE_SETTLE }}
+                    className="bg-slate-900 border border-slate-800 rounded-2xl p-7 flex flex-col justify-between gap-6 hover:border-brand-500/60 transition-colors"
                   >
                     <div className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <div className="w-11 h-11 rounded-xl bg-black text-white flex items-center justify-center shrink-0">
-                          <IconComponent size={20} className="text-emerald-400" />
+                        <div className="w-11 h-11 rounded-xl bg-brand-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-brand-500/20">
+                          <IconComponent size={20} />
                         </div>
-                        <span className="text-xs font-mono font-bold text-brand-700">
+                        <span className="text-xs font-mono font-bold text-accent-400">
                           {item.number}
                         </span>
                       </div>
 
                       <h3
-                        className="text-xl font-extrabold text-black tracking-tight"
+                        className="text-xl font-extrabold text-white tracking-tight"
                         style={{ fontFamily: 'var(--font-display)' }}
                       >
                         {item.title}
                       </h3>
 
-                      <p className="text-sm text-black leading-relaxed">{item.description}</p>
+                      <p className="text-sm text-white/85 leading-relaxed">{item.description}</p>
                     </div>
 
-                    <p className="pt-4 border-t border-slate-200 text-xs font-semibold text-brand-700">
+                    <p className="pt-4 border-t border-slate-800 text-xs font-semibold text-emerald-400">
                       {item.spec}
                     </p>
-                  </article>
+                  </motion.article>
                 );
               })}
             </div>
           </div>
         </section>
 
-        {/* Interactive Bookkeeping ROI & Time-Saved Calculator */}
-        <section id="calculator" className="py-20 lg:py-24 bg-slate-950 text-white">
+        {/* Interactive Bookkeeping ROI & Time-Saved Calculator — Deep Emerald Band */}
+        <section id="calculator" className="py-20 lg:py-24 bg-brand-800 text-white border-t border-brand-700">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-              <div className="lg:col-span-5 space-y-5">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.4, ease: EASE_SETTLE }}
+                className="lg:col-span-5 space-y-5"
+              >
                 <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-400">
                   Interactive Close-Time Estimator
                 </p>
@@ -1662,7 +1981,7 @@ export function LandingPage({
                 >
                   Calculate what manual spreadsheets cost your business each year.
                 </h2>
-                <p className="text-sm sm:text-base text-white/90 leading-relaxed">
+                <p className="text-sm sm:text-base text-emerald-50/90 leading-relaxed">
                   Adjust your monthly invoice volume, imported bank lines, and internal finance rate
                   to estimate hours reclaimed with automated statement cleaning, G.C.T. invoicing,
                   and double-entry posting.
@@ -1674,7 +1993,7 @@ export function LandingPage({
                       <label htmlFor="calc-invoices" className="text-white font-medium">
                         Monthly Invoices & Vendor Bills
                       </label>
-                      <span className="font-mono tabular-nums font-semibold text-white">
+                      <span className="font-mono tabular-nums font-semibold text-accent-400">
                         {monthlyInvoices} docs
                       </span>
                     </div>
@@ -1686,7 +2005,7 @@ export function LandingPage({
                       step={5}
                       value={monthlyInvoices}
                       onChange={(e) => setMonthlyInvoices(Number(e.target.value))}
-                      className="w-full accent-brand-500 cursor-pointer"
+                      className="w-full accent-accent-500 cursor-pointer"
                     />
                   </div>
 
@@ -1695,7 +2014,7 @@ export function LandingPage({
                       <label htmlFor="calc-lines" className="text-white font-medium">
                         Bank & Card Transactions / Month
                       </label>
-                      <span className="font-mono tabular-nums font-semibold text-white">
+                      <span className="font-mono tabular-nums font-semibold text-accent-400">
                         {monthlyBankLines} rows
                       </span>
                     </div>
@@ -1707,7 +2026,7 @@ export function LandingPage({
                       step={25}
                       value={monthlyBankLines}
                       onChange={(e) => setMonthlyBankLines(Number(e.target.value))}
-                      className="w-full accent-brand-500 cursor-pointer"
+                      className="w-full accent-accent-500 cursor-pointer"
                     />
                   </div>
 
@@ -1716,7 +2035,7 @@ export function LandingPage({
                       <label htmlFor="calc-rate" className="text-white font-medium">
                         Bookkeeping / Staff Hourly Cost
                       </label>
-                      <span className="font-mono tabular-nums font-semibold text-white">
+                      <span className="font-mono tabular-nums font-semibold text-accent-400">
                         ${hourlyRate}/hr
                       </span>
                     </div>
@@ -1728,21 +2047,27 @@ export function LandingPage({
                       step={5}
                       value={hourlyRate}
                       onChange={(e) => setHourlyRate(Number(e.target.value))}
-                      className="w-full accent-brand-500 cursor-pointer"
+                      className="w-full accent-accent-500 cursor-pointer"
                     />
                   </div>
                 </div>
-              </div>
+              </motion.div>
 
-              <div className="lg:col-span-7">
-                <div className="bg-slate-900 border border-slate-800 rounded-2xl p-7 sm:p-10 space-y-8">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-5">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, delay: 0.08, ease: EASE_SETTLE }}
+                className="lg:col-span-7"
+              >
+                <div className="bg-black border border-white/15 rounded-2xl p-7 sm:p-10 space-y-8 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-white/15 pb-5">
                     <div>
                       <p className="text-xs uppercase tracking-wider text-white/80">
                         Estimated Annual Administrative Savings
                       </p>
                       <p
-                        className="text-4xl sm:text-5xl font-extrabold font-mono tabular-nums text-emerald-400 mt-2"
+                        className="text-4xl sm:text-5xl font-extrabold font-mono tabular-nums text-accent-400 mt-2"
                         style={{ fontFamily: 'var(--font-display)' }}
                       >
                         ${annualSavings.toLocaleString()}/yr
@@ -1752,7 +2077,7 @@ export function LandingPage({
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-5">
+                    <div className="bg-slate-900 border border-white/10 rounded-xl p-5">
                       <p className="text-xs text-white/80">Reconciliation Time Reclaimed</p>
                       <p className="text-2xl font-bold font-mono tabular-nums text-white mt-1.5">
                         {hoursSavedPerMonth} hrs / month
@@ -1762,9 +2087,9 @@ export function LandingPage({
                       </p>
                     </div>
 
-                    <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-5">
+                    <div className="bg-slate-900 border border-white/10 rounded-xl p-5">
                       <p className="text-xs text-white/80">Projected AR Collection Speedup</p>
-                      <p className="text-2xl font-bold font-mono tabular-nums text-accent-400 mt-1.5">
+                      <p className="text-2xl font-bold font-mono tabular-nums text-emerald-400 mt-1.5">
                         {fasterCollectionDays} days faster
                       </p>
                       <p className="text-xs text-white/75 mt-1">
@@ -1779,7 +2104,7 @@ export function LandingPage({
                     </p>
                     <button
                       type="button"
-                      onClick={onGetStarted}
+                      onClick={() => onGetStarted()}
                       className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-brand-500 hover:bg-brand-600 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap shrink-0"
                     >
                       Start Saving {hoursSavedPerMonth} hrs/mo
@@ -1787,34 +2112,90 @@ export function LandingPage({
                     </button>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             </div>
           </div>
         </section>
 
-        {/* Quantified Client Outcomes */}
-        <section id="proof" className="py-20 lg:py-24 bg-slate-50 border-b border-slate-200">
+        {/* Quantified Client Outcomes — Warm Gold Tint + Commercial Photography */}
+        <section id="proof" className="py-20 lg:py-24 bg-accent-50/55 border-b border-amber-200/70">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="max-w-2xl mb-12">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-3">
-                Verified Operational Results
-              </p>
-              <h2
-                className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
-                style={{ fontFamily: 'var(--font-display)' }}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center mb-12">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.4, ease: EASE_SETTLE }}
+                className="lg:col-span-6 space-y-4"
               >
-                How finance teams replace spreadsheet patchwork with Island Bookkeeping.
-              </h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
+                  Verified Operational Results
+                </p>
+                <h2
+                  className="text-3xl sm:text-4xl font-extrabold text-black tracking-tight text-balance"
+                  style={{ fontFamily: 'var(--font-display)' }}
+                >
+                  How finance teams replace spreadsheet patchwork with Island Bookkeeping.
+                </h2>
+                <p className="text-sm sm:text-base text-black leading-relaxed">
+                  From Kingston distribution hubs to hospitality operators in Ocho Rios and remote
+                  advisory firms, owners reclaim hours every week and enter tax season prepared.
+                </p>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, delay: 0.08, ease: EASE_SETTLE }}
+                className="lg:col-span-6"
+              >
+                <div className="rounded-2xl overflow-hidden border border-amber-300/70 shadow-lg relative bg-slate-900 group">
+                  {failedImages['proof_business'] ? (
+                    <div className="aspect-video bg-brand-900 p-8 flex flex-col justify-end text-white">
+                      <span className="text-xs font-mono font-bold text-accent-400">
+                        Verified Client Impact
+                      </span>
+                      <p className="text-lg font-bold mt-1">
+                        12+ hours reclaimed monthly across small business finance teams.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <img
+                        src={proofBusinessImg}
+                        alt="Caribbean operations manager reviewing real-time revenue and cash-flow performance on a tablet inside a modern commercial facility"
+                        referrerPolicy="no-referrer"
+                        onError={() => handleImageError('proof_business')}
+                        className="w-full h-auto aspect-video object-cover block transition-transform duration-500 group-hover:scale-[1.03]"
+                      />
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-5">
+                        <p className="text-xs font-mono font-bold text-accent-400">
+                          Real-World Small Business Operations
+                        </p>
+                        <p className="text-xs sm:text-sm font-semibold text-white mt-0.5">
+                          Live receivables, inventory margins &amp; monthly close at your fingertips
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {CLIENT_OUTCOMES.map((item) => (
-                <article
+              {CLIENT_OUTCOMES.map((item, idx) => (
+                <motion.article
                   key={item.author}
-                  className="bg-white border border-slate-200 rounded-2xl p-7 flex flex-col justify-between gap-6"
+                  initial={{ opacity: 0, y: 18 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={SECTION_VIEWPORT}
+                  whileHover={{ y: -4 }}
+                  transition={{ duration: 0.35, delay: idx * 0.08, ease: EASE_SETTLE }}
+                  className="bg-white border border-amber-200/90 rounded-2xl p-7 flex flex-col justify-between gap-6 shadow-sm"
                 >
                   <div className="space-y-5">
-                    <div className="space-y-2 pb-4 border-b border-slate-100 text-xs">
+                    <div className="space-y-2 pb-4 border-b border-amber-100 text-xs">
                       <p className="text-black">
                         <span className="font-semibold text-black">Before:</span> {item.before}
                       </p>
@@ -1829,9 +2210,9 @@ export function LandingPage({
 
                   <div className="pt-4 border-t border-slate-100">
                     <p className="text-sm font-bold text-black">{item.author}</p>
-                    <p className="text-xs text-black mt-0.5">{item.role}</p>
+                    <p className="text-xs text-black/80 mt-0.5">{item.role}</p>
                   </div>
-                </article>
+                </motion.article>
               ))}
             </div>
           </div>
@@ -1842,7 +2223,13 @@ export function LandingPage({
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
               {/* FAQ Column */}
-              <div className="lg:col-span-6 space-y-6">
+              <motion.div
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.4, ease: EASE_SETTLE }}
+                className="lg:col-span-6 space-y-6"
+              >
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700 mb-2">
                     Questions & Answers
@@ -1863,11 +2250,18 @@ export function LandingPage({
                     </div>
                   ))}
                 </div>
-              </div>
+              </motion.div>
 
               {/* Free Consultation, Client Onboarding & WhatsApp Contact Column */}
-              <div id="contact" className="lg:col-span-6">
-                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-7 sm:p-9 space-y-6">
+              <motion.div
+                id="contact"
+                initial={{ opacity: 0, y: 18 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={SECTION_VIEWPORT}
+                transition={{ duration: 0.45, delay: 0.08, ease: EASE_SETTLE }}
+                className="lg:col-span-6"
+              >
+                <div className="bg-emerald-50/75 border border-brand-200 rounded-2xl p-7 sm:p-9 space-y-6 shadow-sm">
                   <div className="space-y-2.5">
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-700">
                       Get Started With Confidence
@@ -1953,8 +2347,16 @@ export function LandingPage({
                   </div>
 
                   <div>
+                    <AnimatePresence mode="wait">
                     {inquirySubmitted ? (
-                      <div className="bg-white border border-brand-300 rounded-xl p-6 space-y-4">
+                      <motion.div
+                        key="submitted"
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2, ease: EASE_SETTLE }}
+                        className="bg-white border border-brand-300 rounded-xl p-6 space-y-4"
+                      >
                         <div className="flex items-center gap-2 text-brand-700 font-bold text-sm">
                           <Check size={18} />
                           <span>
@@ -1980,7 +2382,7 @@ export function LandingPage({
                         <div className="flex flex-wrap items-center gap-3 pt-1">
                           <button
                             type="button"
-                            onClick={onGetStarted}
+                            onClick={() => onGetStarted()}
                             className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                           >
                             Get Started in Workspace
@@ -1996,9 +2398,17 @@ export function LandingPage({
                             Follow up on WhatsApp
                           </a>
                         </div>
-                      </div>
+                      </motion.div>
                     ) : (
-                      <form onSubmit={handleInquirySubmit} className="space-y-4">
+                      <motion.form
+                        key={contactTab}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -8 }}
+                        transition={{ duration: 0.2, ease: EASE_SETTLE }}
+                        onSubmit={handleInquirySubmit}
+                        className="space-y-4"
+                      >
                         {inquiryError && (
                           <p className="text-xs font-medium text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
                             {inquiryError}
@@ -2090,9 +2500,9 @@ export function LandingPage({
                               className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-lg text-sm text-black focus:outline-none focus:ring-2 focus:ring-brand-500/25 focus:border-brand-500"
                             >
                               <optgroup label="Bookkeeping Packages">
-                                <option>Self-Managed Workspace</option>
-                                <option>Monthly Core Bookkeeping</option>
-                                <option>Full-Service & Advisory</option>
+                                <option>Essential Monthly Bookkeeping</option>
+                                <option>Growth Bookkeeping &amp; Tax Prep</option>
+                                <option>Full-Service &amp; Advisory</option>
                                 <option>Custom / Catch-Up Quote</option>
                               </optgroup>
                               <optgroup label="Specific Services">
@@ -2201,11 +2611,12 @@ export function LandingPage({
                           <Lock size={12} className="text-brand-600" />
                           100% confidential enquiry · No obligation or long-term lock-in
                         </p>
-                      </form>
+                      </motion.form>
                     )}
+                    </AnimatePresence>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             </div>
           </div>
         </section>
@@ -2219,6 +2630,10 @@ export function LandingPage({
             <div className="lg:col-span-4 space-y-5">
               <a
                 href="#top"
+                onClick={(e) => {
+                  e.preventDefault();
+                  scrollToTop();
+                }}
                 className="inline-flex items-center gap-2.5 whitespace-nowrap focus:outline-none"
               >
                 <span className="w-8 h-8 rounded-lg jamaica-gradient flex items-center justify-center text-white font-extrabold text-sm">
@@ -2244,7 +2659,7 @@ export function LandingPage({
               <div className="pt-1">
                 <button
                   type="button"
-                  onClick={onGetStarted}
+                  onClick={() => onGetStarted()}
                   className="inline-flex items-center gap-2 px-4 py-2.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer"
                 >
                   Get Started
@@ -2408,7 +2823,7 @@ export function LandingPage({
                   </button>
                   <button
                     type="button"
-                    onClick={onGetStarted}
+                    onClick={() => onGetStarted()}
                     className="text-emerald-400 font-semibold hover:underline underline-offset-4 transition-colors cursor-pointer"
                   >
                     Create Account
@@ -2421,12 +2836,42 @@ export function LandingPage({
           {/* Bottom Copyright Row */}
           <div className="pt-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs text-white/80">
             <p>Copyright @ 2026 Island Bookkeeping. All Rights Reserved.</p>
-            <p>
-              Developed by <span className="text-emerald-400 font-semibold">Island Web Consultants</span>
-            </p>
+            <div className="flex items-center gap-5">
+              <button
+                type="button"
+                onClick={scrollToTop}
+                className="inline-flex items-center gap-1.5 text-white/90 hover:text-brand-400 font-semibold transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <ArrowUp size={13} className="text-accent-400" />
+                Back to top
+              </button>
+              <p>
+                Developed by <span className="text-emerald-400 font-semibold">Island Web Consultants</span>
+              </p>
+            </div>
           </div>
         </div>
       </footer>
+
+      {/* Floating Back to Top Button */}
+      <AnimatePresence>
+        {showBackToTop && (
+          <motion.button
+            type="button"
+            aria-label="Back to top"
+            onClick={scrollToTop}
+            initial={{ opacity: 0, y: 12, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 12, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: EASE_SETTLE }}
+            className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-3.5 py-2.5 bg-black hover:bg-brand-600 text-white border border-brand-500/70 rounded-xl text-xs font-bold shadow-xl shadow-black/30 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <ArrowUp size={14} className="text-accent-400 shrink-0" />
+            <span>Back to Top</span>
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
+    </MotionConfig>
   );
 }

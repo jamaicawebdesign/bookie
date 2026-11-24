@@ -3,7 +3,7 @@ import { Plus, Search, ClipboardList, ChevronDown, ChevronUp, Download, Eye, Fil
 import { motion, AnimatePresence } from 'motion/react';
 import { dataService } from '../services/dataService';
 import { JournalEntry, Account, JournalLine } from '../types';
-import { formatCurrency, cn, formatLocalDate } from '../lib/utils';
+import { formatCurrency, cn, formatLocalDate, sanitizeCsvCell } from '../lib/utils';
 import { ConfirmationModal } from './ConfirmationModal';
 
 export function LedgerPage() {
@@ -16,6 +16,7 @@ export function LedgerPage() {
   const [expandedEntries, setExpandedEntries] = useState<string[]>([]);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState<string | null>(null);
+  const canManageLedger = dataService.can('manage_ledger');
 
   useEffect(() => {
     fetchData();
@@ -36,6 +37,7 @@ export function LedgerPage() {
 
   const handleDeleteEntry = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!canManageLedger) return;
     setEntryToDelete(id);
     setIsDeleteConfirmOpen(true);
   };
@@ -69,10 +71,10 @@ export function LedgerPage() {
         rows.push([
           index === 0 ? entry.date : '',
           index === 0 ? entry.id : '',
-          index === 0 ? `"${(entry.description || '').replace(/"/g, '""')}"` : '',
+          index === 0 ? (entry.description || '') : '',
           index === 0 ? entry.status : '',
           account?.code || '',
-          `"${(account?.name || '').replace(/"/g, '""')}"`,
+          account?.name || '',
           line.debit || 0,
           line.credit || 0
         ]);
@@ -81,8 +83,8 @@ export function LedgerPage() {
     });
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
+      headers.map(sanitizeCsvCell).join(','),
+      ...rows.map(row => row.map(sanitizeCsvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -243,13 +245,15 @@ export function LedgerPage() {
                           >
                             <Eye size={16} />
                           </button>
-                          <button 
-                            onClick={(e) => handleDeleteEntry(entry.id, e)}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
-                            title="Delete Entry"
-                          >
-                            <TrashIcon size={16} />
-                          </button>
+                          {canManageLedger && (
+                            <button 
+                              onClick={(e) => handleDeleteEntry(entry.id, e)}
+                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                              title="Delete Entry"
+                            >
+                              <TrashIcon size={16} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

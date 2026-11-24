@@ -3,6 +3,7 @@ import { cn, formatCurrency } from '../lib/utils';
 import { Inbox, Edit2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { ConfirmationModal } from './ConfirmationModal';
+import { dataService } from '../services/dataService';
 
 interface DataGridProps {
   data: DataRecord[];
@@ -14,6 +15,7 @@ export function DataGrid({ data, onEdit, onDelete }: DataGridProps) {
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
   const isEmpty = !data || data.length === 0;
+  const canEdit = dataService.can('manage_transactions');
 
   const handleDelete = (id: string) => {
     setRecordToDelete(id);
@@ -78,22 +80,26 @@ export function DataGrid({ data, onEdit, onDelete }: DataGridProps) {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
-                      <button 
-                        onClick={() => onEdit?.(record)}
-                        className="p-2.5 bg-white text-brand-600 border border-brand-100 hover:bg-brand-600 hover:text-white rounded-xl transition-all shadow-sm hover:shadow-brand-500/40 hover:scale-110 active:scale-95"
-                        title="Edit Record"
-                      >
-                        <Edit2 size={16} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(record.id)}
-                        className="p-2.5 bg-white text-rose-600 border border-rose-100 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm hover:shadow-rose-500/40 hover:scale-110 active:scale-95"
-                        title="Delete Record"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
+                    {canEdit ? (
+                      <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                        <button 
+                          onClick={() => onEdit?.(record)}
+                          className="p-2.5 bg-white text-brand-600 border border-brand-100 hover:bg-brand-600 hover:text-white rounded-xl transition-all shadow-sm hover:shadow-brand-500/40 hover:scale-110 active:scale-95"
+                          title="Edit Record"
+                        >
+                          <Edit2 size={16} />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(record.id)}
+                          className="p-2.5 bg-white text-rose-600 border border-rose-100 hover:bg-rose-600 hover:text-white rounded-xl transition-all shadow-sm hover:shadow-rose-500/40 hover:scale-110 active:scale-95"
+                          title="Delete Record"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-400">Read-only</span>
+                    )}
                   </td>
                 </tr>
               ))

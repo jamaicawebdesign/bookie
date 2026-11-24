@@ -25,7 +25,7 @@ import {
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Invoice } from '../types';
-import { cn, formatCurrency, formatLocalDate } from '../lib/utils';
+import { cn, formatCurrency, formatLocalDate, sanitizeCsvCell } from '../lib/utils';
 import { dataService } from '../services/dataService';
 import { ConfirmationModal } from './ConfirmationModal';
 
@@ -86,13 +86,16 @@ export function InvoicesPage() {
     }
   };
 
+  const canEdit = dataService.can('manage_transactions');
+
   const handleDelete = (id: string) => {
+    if (!canEdit) return;
     setInvoiceToDelete(id);
     setIsDeleteConfirmOpen(true);
   };
 
   const confirmDelete = () => {
-    if (!invoiceToDelete) return;
+    if (!invoiceToDelete || !canEdit) return;
     try {
       dataService.deleteInvoice(invoiceToDelete);
       fetchData();
@@ -104,6 +107,7 @@ export function InvoicesPage() {
   };
 
   const handleMarkAsPaid = (invoice: Invoice) => {
+    if (!canEdit) return;
     try {
       const updatedInvoice = { ...invoice, status: 'Paid' as const };
       dataService.saveInvoice(updatedInvoice);
@@ -114,7 +118,7 @@ export function InvoicesPage() {
   };
 
   const handleBulkStatusUpdate = (status: 'Paid' | 'Unpaid' | 'Overdue') => {
-    if (selectedIds.length === 0) return;
+    if (!canEdit || selectedIds.length === 0) return;
     try {
       dataService.bulkUpdateInvoiceStatus(selectedIds, status);
       setSelectedIds([]);
@@ -125,7 +129,7 @@ export function InvoicesPage() {
   };
 
   const handleBulkDelete = () => {
-    if (selectedIds.length === 0) return;
+    if (!canEdit || selectedIds.length === 0) return;
     setIsBulkDeleteConfirmOpen(true);
   };
 
@@ -269,7 +273,7 @@ export function InvoicesPage() {
     const headers = ['Invoice ID', 'Client', 'Subtotal', 'Tax Rate (%)', 'Tax Amount', 'Total', 'Date', 'Due Date', 'Status', 'Description'];
     const rows = filteredInvoices.map(i => [
       i.id,
-      `"${(i.client_name || '').replace(/"/g, '""')}"`,
+      i.client_name || '',
       i.amount,
       i.tax_rate || 0,
       i.tax_amount || 0,
@@ -277,12 +281,12 @@ export function InvoicesPage() {
       i.date,
       i.due_date,
       i.status,
-      `"${(i.description || '').replace(/"/g, '""')}"`
+      i.description || ''
     ]);
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
+      headers.map(sanitizeCsvCell).join(','),
+      ...rows.map(row => row.map(sanitizeCsvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -627,7 +631,7 @@ export function InvoicesPage() {
                         >
                           <Eye size={16} />
                         </button>
-                        {invoice.status !== 'Paid' && (
+                        {canEdit && invoice.status !== 'Paid' && (
                           <button 
                             onClick={() => handleMarkAsPaid(invoice)}
                             className="p-2 text-slate-400 hover:bg-emerald-50 hover:text-emerald-600 rounded-xl transition-all"
@@ -636,23 +640,27 @@ export function InvoicesPage() {
                             <CheckCircle2 size={16} />
                           </button>
                         )}
-                        <button 
-                          onClick={() => {
-                            setEditingInvoice(invoice);
-                            setIsModalOpen(true);
-                          }}
-                          className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
-                          title="Edit"
-                        >
-                          <Edit2 size={16} />
-                        </button>
-                        <button 
-                          onClick={() => handleDelete(invoice.id)}
-                          className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
-                          title="Delete"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        {canEdit && (
+                          <>
+                            <button 
+                              onClick={() => {
+                                setEditingInvoice(invoice);
+                                setIsModalOpen(true);
+                              }}
+                              className="p-2 text-slate-400 hover:bg-brand-50 hover:text-brand-600 rounded-xl transition-all"
+                              title="Edit"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(invoice.id)}
+                              className="p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-600 rounded-xl transition-all"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>

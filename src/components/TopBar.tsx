@@ -12,11 +12,13 @@ import {
   Camera,
   CheckCircle2,
   HardDrive,
+  UsersRound,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { NotificationCenter } from './NotificationCenter';
 import { PageId } from './Sidebar';
 import { cn } from '../lib/utils';
+import { normalizeRole } from '../lib/permissions';
 import { dataService } from '../services/dataService';
 import { isSupabaseConfigured } from '../lib/supabase';
 
@@ -104,10 +106,13 @@ export const TopBar: React.FC<TopBarProps> = ({
       expenses: 'Expense Tracking',
       budgets: 'Budget Planning',
       clients: 'Client Directory',
+      team: 'Team & Access',
       security: 'Security & Privacy',
       accounts: 'Chart of Accounts',
       ledger: 'General Ledger',
+      reconciliation: 'Bank Reconciliation',
       reports: 'Financial Reports',
+      'jamaica-compliance': 'Jamaica Tax & Payroll',
       accounts_receivable: 'Accounts Receivable',
       accounts_payable: 'Accounts Payable',
     };
@@ -213,7 +218,7 @@ export const TopBar: React.FC<TopBarProps> = ({
                 {user?.name || 'Account'}
               </span>
               <span className="text-[10px] text-slate-600 font-bold uppercase tracking-widest mt-1 max-w-[140px] truncate">
-                {user?.role || 'Member'}
+                {normalizeRole(user?.role)}
               </span>
             </div>
 
@@ -280,6 +285,11 @@ export const TopBar: React.FC<TopBarProps> = ({
                           <Building2 size={11} className="shrink-0" />
                           <span className="truncate">{user.company}</span>
                         </div>
+                      )}
+                      {user?.plan && (
+                        <p className="mt-1 text-[11px] font-semibold text-slate-800 truncate">
+                          Plan: {user.plan}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -359,6 +369,28 @@ export const TopBar: React.FC<TopBarProps> = ({
                       <span>Notification Preferences</span>
                       <span className="text-[11px] font-medium text-slate-600">
                         Budget overruns & invoice alerts
+                      </span>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => handleNavigate('team')}
+                    className={cn(
+                      'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all text-left cursor-pointer',
+                      activePage === 'team'
+                        ? 'bg-brand-50 text-brand-700'
+                        : 'text-slate-900 hover:bg-slate-50 hover:text-brand-700'
+                    )}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">
+                      <UsersRound size={15} />
+                    </div>
+                    <div className="flex flex-col">
+                      <span>Team & Multi-User Access</span>
+                      <span className="text-[11px] font-medium text-slate-600">
+                        Manage members, roles & invites
                       </span>
                     </div>
                   </button>

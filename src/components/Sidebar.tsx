@@ -16,11 +16,15 @@ import {
   Shield,
   BookOpen,
   ClipboardList,
-  BarChart
+  BarChart,
+  Scale,
+  UsersRound,
+  Landmark
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { normalizeRole } from '../lib/permissions';
 
-export type PageId = 'dashboard' | 'analytics' | 'data-sources' | 'settings' | 'visualisation' | 'import' | 'invoices' | 'expenses' | 'budgets' | 'clients' | 'security' | 'accounts' | 'ledger' | 'reports' | 'accounts_receivable' | 'accounts_payable';
+export type PageId = 'dashboard' | 'analytics' | 'data-sources' | 'settings' | 'visualisation' | 'import' | 'invoices' | 'expenses' | 'budgets' | 'clients' | 'security' | 'team' | 'accounts' | 'ledger' | 'reconciliation' | 'reports' | 'jamaica-compliance' | 'accounts_receivable' | 'accounts_payable';
 
 interface SidebarProps {
   activePage: PageId;
@@ -42,11 +46,14 @@ export function Sidebar({ activePage, onPageChange, onLogout, user }: SidebarPro
     { icon: Target, label: 'Budgets', id: 'budgets' },
     { icon: BookOpen, label: 'Chart of Accounts', id: 'accounts' },
     { icon: ClipboardList, label: 'General Ledger', id: 'ledger' },
+    { icon: Scale, label: 'Bank Reconciliation', id: 'reconciliation' },
     { icon: BarChart, label: 'Financial Reports', id: 'reports' },
+    { icon: Landmark, label: 'Jamaica Tax & Payroll', id: 'jamaica-compliance' },
     { icon: BarChart3, label: 'Analytics', id: 'analytics' },
     { icon: Database, label: 'Data Sources', id: 'data-sources' },
     { icon: Upload, label: 'Data Import', id: 'import' },
     { icon: PieChartIcon, label: 'Visualisation', id: 'visualisation' },
+    { icon: UsersRound, label: 'Team & Access', id: 'team' },
     { icon: Shield, label: 'Security', id: 'security' },
     { icon: Settings, label: 'Settings', id: 'settings' },
   ];
@@ -117,7 +124,9 @@ export function Sidebar({ activePage, onPageChange, onLogout, user }: SidebarPro
           </div>
           <div className="flex flex-col min-w-0">
             <span className="text-sm font-bold text-white truncate">{user?.name || 'User'}</span>
-            <span className="text-[10px] text-slate-500 font-medium truncate">{user?.role || 'Member'}</span>
+            <span className="text-[10px] text-slate-400 font-semibold truncate">
+              {normalizeRole(user?.role)} · {user?.company || 'Workspace'}
+            </span>
           </div>
         </div>
         <button 

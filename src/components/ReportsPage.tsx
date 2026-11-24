@@ -1,14 +1,27 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { FileText, Download, Calendar, Clock, FileSpreadsheet } from 'lucide-react';
+import { FileText, Download, Calendar, Clock, FileSpreadsheet, CheckCircle2, AlertCircle, Scale, ArrowRight } from 'lucide-react';
 import { dataService } from '../services/dataService';
-import { Account, Invoice, Expense, Budget } from '../types';
-import { formatCurrency, cn, formatLocalDate } from '../lib/utils';
+import { Account, Invoice, Expense, Budget, JournalEntry, BankStatementLine, ReconciliationRecord } from '../types';
+import { formatCurrency, cn, formatLocalDate, sanitizeCsvCell } from '../lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ReportExportModal, ReportExportFilters } from './ReportExportModal';
 
-type ReportType = 'trial-balance' | 'balance-sheet' | 'income-statement' | 'accounts-receivable' | 'accounts-payable' | 'budget-vs-actual';
+type ReportType = 'trial-balance' | 'balance-sheet' | 'income-statement' | 'accounts-receivable' | 'accounts-payable' | 'budget-vs-actual' | 'bank-reconciliation-status';
+
+interface UnreconciledTxItem {
+  id: string;
+  accountId: string;
+  accountLabel: string;
+  date: string;
+  source: 'Journal Entry' | 'Paid Invoice' | 'Paid Expense';
+  reference: string;
+  description: string;
+  type: 'Deposit' | 'Withdrawal';
+  amount: number;
+  inDraft: boolean;
+}
 
 const getInvoiceRemaining = (inv: Invoice) => {
   if (inv.status === 'Paid') return 0;
@@ -16,7 +29,7 @@ const getInvoiceRemaining = (inv: Invoice) => {
   return Math.max(0, inv.amount + (inv.tax_amount || 0) - paid);
 };
 
-export function ReportsPage() {
+export function ReportsPage({ onNavigateToReconciliation }: { onNavigateToReconciliation?: () => void }) {
   const [activeReport, setActiveReport] = useState<ReportType>('trial-balance');
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -24,6 +37,11 @@ export function ReportsPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [allJournalEntries, setAllJournalEntries] = useState<JournalEntry[]>([]);
+  const [allPaidInvoices, setAllPaidInvoices] = useState<Invoice[]>([]);
+  const [allPaidExpenses, setAllPaidExpenses] = useState<Expense[]>([]);
+  const [reconciliations, setReconciliations] = useState<ReconciliationRecord[]>([]);
+  const [statementLines, setStatementLines] = useState<BankStatementLine[]>([]);
   const [syncTick, setSyncTick] = useState(0);
   const [dateRange, setDateRange] = useState({ 
     start: formatLocalDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1)), 
@@ -122,6 +140,11 @@ export function ReportsPage() {
     setExpenses(filteredExpenses);
     
     setBudgets(dataService.getBudgets());
+    setAllJournalEntries(journalEntries);
+    setAllPaidInvoices(dataService.getInvoices().filter(i => i.status === 'Paid'));
+    setAllPaidExpenses(dataService.getExpenses().filter(e => e.status === 'Paid'));
+    setReconciliations(dataService.getReconciliations());
+    setStatementLines(dataService.getBankStatementLines());
   }, [dateRange, statusFilter, syncTick]);
 
   const handleExportPDF = () => {
@@ -215,6 +238,44 @@ export function ReportsPage() {
         const remaining = budget - actual;
         const utilization = budget > 0 ? (actual / budget) * 100 : 0;
         return [cat, formatCurrency(budget), formatCurrency(actual), formatCurrency(remaining), `${utilization.toFixed(1)}%`];
+      });
+    } else if (activeReport === 'bank-reconciliation-status') {
+      tableHeaders = ['Account', 'Date', 'Source', 'Reference', 'Description', 'Type', 'Amount', 'Status'];
+      const summaryRows = buildAccountReconciliationSummaries({
+        accounts,
+        journalEntries: allJournalEntries,
+        paidInvoices: allPaidInvoices,
+        paidExpenses: allPaidExpenses,
+        reconciliations,
+        statementLines,
+        dateRange,
+      });
+      summaryRows.forEach((accSummary) => {
+        if (accSummary.unreconciledItems.length === 0) {
+          tableData.push([
+            `${accSummary.account.code} ${accSummary.account.name}`,
+            accSummary.lastReconciledDate || '-',
+            'Summary',
+            '-',
+            'All transactions reconciled for period',
+            '-',
+            formatCurrency(0),
+            'Reconciled',
+          ]);
+        } else {
+          accSummary.unreconciledItems.forEach((item) => {
+            tableData.push([
+              `${accSummary.account.code} ${accSummary.account.name}`,
+              item.date,
+              item.source,
+              item.reference,
+              item.description,
+              item.type,
+              formatCurrency(item.amount),
+              item.inDraft ? 'In Draft' : 'Unreconciled',
+            ]);
+          });
+        }
       });
     }
 
@@ -352,11 +413,37 @@ export function ReportsPage() {
         const utilization = budget > 0 ? (actual / budget) * 100 : 0;
         return [cat, budget, actual, remaining, utilization.toFixed(1)];
       });
+    } else if (activeReport === 'bank-reconciliation-status') {
+      headers = ['Account Code', 'Account Name', 'Date', 'Source', 'Reference', 'Description', 'Type', 'Amount', 'Reconciliation State'];
+      const summaryRows = buildAccountReconciliationSummaries({
+        accounts: exportAccounts,
+        journalEntries,
+        paidInvoices: allInvoices.filter(i => i.status === 'Paid'),
+        paidExpenses: allExpenses.filter(e => e.status === 'Paid'),
+        reconciliations: dataService.getReconciliations(),
+        statementLines: dataService.getBankStatementLines(),
+        dateRange: { start: startDate, end: endDate },
+      });
+      summaryRows.forEach((accSummary) => {
+        accSummary.unreconciledItems.forEach((item) => {
+          rows.push([
+            accSummary.account.code,
+            accSummary.account.name,
+            item.date,
+            item.source,
+            item.reference,
+            item.description,
+            item.type,
+            item.amount,
+            item.inDraft ? 'In Draft' : 'Unreconciled',
+          ]);
+        });
+      });
     }
 
     const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      headers.map(sanitizeCsvCell).join(','),
+      ...rows.map(row => row.map(sanitizeCsvCell).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -373,7 +460,7 @@ export function ReportsPage() {
   const renderReport = () => {
     switch (activeReport) {
       case 'trial-balance':
-        return <TrialBalance accounts={accounts} dateRange={dateRange} />;
+        return <TrialBalance accounts={accounts} journalEntries={allJournalEntries} dateRange={dateRange} />;
       case 'balance-sheet':
         return <BalanceSheet accounts={accounts} dateRange={dateRange} />;
       case 'income-statement':
@@ -384,6 +471,19 @@ export function ReportsPage() {
         return <AccountsPayable expenses={expenses} today={today} />;
       case 'budget-vs-actual':
         return <BudgetVsActual budgets={budgets} expenses={expenses} dateRange={dateRange} />;
+      case 'bank-reconciliation-status':
+        return (
+          <BankReconciliationStatusReport
+            accounts={accounts}
+            journalEntries={allJournalEntries}
+            paidInvoices={allPaidInvoices}
+            paidExpenses={allPaidExpenses}
+            reconciliations={reconciliations}
+            statementLines={statementLines}
+            dateRange={dateRange}
+            onNavigateToReconciliation={onNavigateToReconciliation}
+          />
+        );
     }
   };
 
@@ -444,6 +544,15 @@ export function ReportsPage() {
             )}
           >
             Budget vs Actual
+          </button>
+          <button 
+            onClick={() => setActiveReport('bank-reconciliation-status')}
+            className={cn(
+              "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap",
+              activeReport === 'bank-reconciliation-status' ? "bg-white text-brand-600 shadow-sm" : "text-slate-400 hover:text-slate-600"
+            )}
+          >
+            Bank Reconciliation Status
           </button>
         </div>
 
@@ -657,17 +766,88 @@ function BudgetVsActual({ budgets, expenses, dateRange }: { budgets: Budget[], e
   );
 }
 
-function TrialBalance({ accounts, dateRange }: { accounts: Account[], dateRange: { start: string, end: string } }) {
-  const sortedAccounts = [...accounts].sort((a, b) => a.code.localeCompare(b.code));
-  
+function TrialBalance({
+  accounts,
+  journalEntries,
+  dateRange,
+}: {
+  accounts: Account[];
+  journalEntries: JournalEntry[];
+  dateRange: { start: string; end: string };
+}) {
+  // For Trial Balance integrity, compute cumulative Revenue & Expense up to dateRange.end
+  // alongside cumulative Asset, Liability, and Equity balances.
+  const cumulativeAccounts = accounts.map((acc) => {
+    if (acc.type !== 'Revenue' && acc.type !== 'Expense') return acc;
+    const allPostedBeforeOrOnEnd = journalEntries.filter(
+      (e) => e.status === 'Posted' && (!dateRange.end || e.date <= dateRange.end)
+    );
+    const allPostedAfterEnd = journalEntries.filter(
+      (e) => e.status === 'Posted' && dateRange.end && e.date > dateRange.end
+    );
+    const fullAccount = dataService.getAccounts().find((a) => a.id === acc.id);
+    if (!fullAccount) return acc;
+
+    let afterAdjustment = 0;
+    allPostedAfterEnd.forEach((entry) => {
+      entry.lines.forEach((line) => {
+        if (line.account_id === acc.id) {
+          afterAdjustment +=
+            acc.type === 'Expense' ? line.debit - line.credit : line.credit - line.debit;
+        }
+      });
+    });
+
+    if (allPostedBeforeOrOnEnd.length === 0 && afterAdjustment === 0) {
+      return { ...acc, balance: fullAccount.balance };
+    }
+    return { ...acc, balance: fullAccount.balance - afterAdjustment };
+  });
+
+  const sortedAccounts = [...cumulativeAccounts].sort((a, b) => a.code.localeCompare(b.code));
+
   let totalDebit = 0;
   let totalCredit = 0;
+  const rows = sortedAccounts.map((account) => {
+    const isDebit = account.type === 'Asset' || account.type === 'Expense';
+    const debit = isDebit ? Math.max(0, account.balance) : Math.max(0, -account.balance);
+    const credit = isDebit ? Math.max(0, -account.balance) : Math.max(0, account.balance);
+    totalDebit += debit;
+    totalCredit += credit;
+    return { account, debit, credit };
+  });
+
+  const variance = totalDebit - totalCredit;
+  const isBalanced = Math.abs(variance) < 0.01;
 
   return (
     <div className="space-y-8">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-black text-jamaica-black uppercase tracking-tighter">Trial Balance</h2>
-        <p className="text-slate-400 text-sm font-medium">For the period {dateRange.start} to {dateRange.end}</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <h2 className="text-2xl font-black text-jamaica-black uppercase tracking-tighter">Trial Balance</h2>
+          <p className="text-slate-500 text-sm font-medium mt-1">Cumulative balances as of {dateRange.end}</p>
+        </div>
+
+        <div
+          className={cn(
+            'inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold',
+            isBalanced
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          )}
+        >
+          {isBalanced ? (
+            <>
+              <CheckCircle2 size={15} className="text-emerald-600" />
+              Double-Entry Verified · Debits Equal Credits
+            </>
+          ) : (
+            <>
+              <AlertCircle size={15} className="text-amber-700" />
+              Out of Balance by {formatCurrency(Math.abs(variance))}
+            </>
+          )}
+        </div>
       </div>
 
       <table className="w-full text-left border-collapse">
@@ -679,14 +859,7 @@ function TrialBalance({ accounts, dateRange }: { accounts: Account[], dateRange:
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {sortedAccounts.map(account => {
-            const isDebit = account.type === 'Asset' || account.type === 'Expense';
-            const debit = isDebit ? Math.max(0, account.balance) : Math.max(0, -account.balance);
-            const credit = isDebit ? Math.max(0, -account.balance) : Math.max(0, account.balance);
-            
-            totalDebit += debit;
-            totalCredit += credit;
-
+          {rows.map(({ account, debit, credit }) => {
             if (debit === 0 && credit === 0) return null;
 
             return (
@@ -697,10 +870,10 @@ function TrialBalance({ accounts, dateRange }: { accounts: Account[], dateRange:
                     <span className="text-sm font-black text-jamaica-black uppercase tracking-tight">{account.name}</span>
                   </div>
                 </td>
-                <td className="py-4 text-right text-sm font-bold tabular-nums">
+                <td className="py-4 text-right text-sm font-bold font-mono tabular-nums">
                   {debit > 0 ? formatCurrency(debit) : '-'}
                 </td>
-                <td className="py-4 text-right text-sm font-bold tabular-nums">
+                <td className="py-4 text-right text-sm font-bold font-mono tabular-nums">
                   {credit > 0 ? formatCurrency(credit) : '-'}
                 </td>
               </tr>
@@ -710,10 +883,10 @@ function TrialBalance({ accounts, dateRange }: { accounts: Account[], dateRange:
         <tfoot>
           <tr className="border-t-2 border-slate-900 font-black">
             <td className="py-6 text-sm uppercase tracking-widest text-jamaica-black">Total</td>
-            <td className="py-6 text-right text-sm tabular-nums border-b-4 border-double border-slate-900">
+            <td className="py-6 text-right text-sm font-mono tabular-nums border-b-4 border-double border-slate-900">
               {formatCurrency(totalDebit)}
             </td>
-            <td className="py-6 text-right text-sm tabular-nums border-b-4 border-double border-slate-900">
+            <td className="py-6 text-right text-sm font-mono tabular-nums border-b-4 border-double border-slate-900">
               {formatCurrency(totalCredit)}
             </td>
           </tr>
@@ -723,20 +896,49 @@ function TrialBalance({ accounts, dateRange }: { accounts: Account[], dateRange:
   );
 }
 
-function BalanceSheet({ accounts, dateRange }: { accounts: Account[], dateRange: { start: string, end: string } }) {
+function BalanceSheet({ accounts, dateRange }: { accounts: Account[]; dateRange: { start: string; end: string } }) {
   const assets = accounts.filter(a => a.type === 'Asset');
   const liabilities = accounts.filter(a => a.type === 'Liability');
   const equity = accounts.filter(a => a.type === 'Equity');
+  const totalRevenue = accounts.filter(a => a.type === 'Revenue').reduce((s, a) => s + a.balance, 0);
+  const totalExpenses = accounts.filter(a => a.type === 'Expense').reduce((s, a) => s + a.balance, 0);
+  const currentPeriodNetIncome = totalRevenue - totalExpenses;
 
   const totalAssets = assets.reduce((acc, curr) => acc + curr.balance, 0);
   const totalLiabilities = liabilities.reduce((acc, curr) => acc + curr.balance, 0);
-  const totalEquity = equity.reduce((acc, curr) => acc + curr.balance, 0);
+  const totalEquity = equity.reduce((acc, curr) => acc + curr.balance, 0) + currentPeriodNetIncome;
+  const totalLiabilitiesAndEquity = totalLiabilities + totalEquity;
+  const equationDifference = totalAssets - totalLiabilitiesAndEquity;
+  const isBalanced = Math.abs(equationDifference) < 0.01;
 
   return (
     <div className="space-y-12">
-      <div className="text-center space-y-2">
-        <h2 className="text-2xl font-black text-jamaica-black uppercase tracking-tighter">Balance Sheet</h2>
-        <p className="text-slate-400 text-sm font-medium">As of {dateRange.end}</p>
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <h2 className="text-2xl font-black text-jamaica-black uppercase tracking-tighter">Balance Sheet</h2>
+          <p className="text-slate-500 text-sm font-medium mt-1">As of {dateRange.end}</p>
+        </div>
+
+        <div
+          className={cn(
+            'inline-flex items-center gap-2 px-4 py-2 rounded-xl border text-xs font-bold',
+            isBalanced
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-900'
+          )}
+        >
+          {isBalanced ? (
+            <>
+              <CheckCircle2 size={15} className="text-emerald-600" />
+              Accounting Equation Balanced (Assets = L + E)
+            </>
+          ) : (
+            <>
+              <AlertCircle size={15} className="text-amber-700" />
+              Equation Variance: {formatCurrency(Math.abs(equationDifference))}
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-16">
@@ -747,13 +949,13 @@ function BalanceSheet({ accounts, dateRange }: { accounts: Account[], dateRange:
             {assets.map(acc => (
               <div key={acc.id} className="flex justify-between items-center">
                 <span className="text-sm font-bold text-slate-600 uppercase">{acc.name}</span>
-                <span className="text-sm font-black tabular-nums">{formatCurrency(acc.balance)}</span>
+                <span className="text-sm font-black font-mono tabular-nums">{formatCurrency(acc.balance)}</span>
               </div>
             ))}
           </div>
           <div className="flex justify-between items-center pt-4 border-t border-slate-200 font-black">
             <span className="text-sm uppercase tracking-widest">Total Assets</span>
-            <span className="text-sm tabular-nums border-b-2 border-slate-900">{formatCurrency(totalAssets)}</span>
+            <span className="text-sm font-mono tabular-nums border-b-2 border-slate-900">{formatCurrency(totalAssets)}</span>
           </div>
         </div>
 
@@ -765,13 +967,13 @@ function BalanceSheet({ accounts, dateRange }: { accounts: Account[], dateRange:
               {liabilities.map(acc => (
                 <div key={acc.id} className="flex justify-between items-center">
                   <span className="text-sm font-bold text-slate-600 uppercase">{acc.name}</span>
-                  <span className="text-sm font-black tabular-nums">{formatCurrency(acc.balance)}</span>
+                  <span className="text-sm font-black font-mono tabular-nums">{formatCurrency(acc.balance)}</span>
                 </div>
               ))}
             </div>
             <div className="flex justify-between items-center pt-4 border-t border-slate-200 font-black">
               <span className="text-sm uppercase tracking-widest">Total Liabilities</span>
-              <span className="text-sm tabular-nums">{formatCurrency(totalLiabilities)}</span>
+              <span className="text-sm font-mono tabular-nums">{formatCurrency(totalLiabilities)}</span>
             </div>
           </div>
 
@@ -781,19 +983,25 @@ function BalanceSheet({ accounts, dateRange }: { accounts: Account[], dateRange:
               {equity.map(acc => (
                 <div key={acc.id} className="flex justify-between items-center">
                   <span className="text-sm font-bold text-slate-600 uppercase">{acc.name}</span>
-                  <span className="text-sm font-black tabular-nums">{formatCurrency(acc.balance)}</span>
+                  <span className="text-sm font-black font-mono tabular-nums">{formatCurrency(acc.balance)}</span>
                 </div>
               ))}
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-slate-600 uppercase">Current Period Net Income</span>
+                <span className={cn('text-sm font-black font-mono tabular-nums', currentPeriodNetIncome >= 0 ? 'text-emerald-700' : 'text-rose-700')}>
+                  {formatCurrency(currentPeriodNetIncome)}
+                </span>
+              </div>
             </div>
             <div className="flex justify-between items-center pt-4 border-t border-slate-200 font-black">
-              <span className="text-sm uppercase tracking-widest text-slate-400">Total Equity</span>
-              <span className="text-sm tabular-nums">{formatCurrency(totalEquity)}</span>
+              <span className="text-sm uppercase tracking-widest text-slate-500">Total Equity</span>
+              <span className="text-sm font-mono tabular-nums">{formatCurrency(totalEquity)}</span>
             </div>
           </div>
 
           <div className="flex justify-between items-center pt-6 border-t-2 border-slate-900 font-black bg-slate-50 p-4 rounded-2xl">
             <span className="text-sm uppercase tracking-widest">Total Liabilities & Equity</span>
-            <span className="text-sm tabular-nums border-b-2 border-slate-900">{formatCurrency(totalLiabilities + totalEquity)}</span>
+            <span className="text-sm font-mono tabular-nums border-b-2 border-slate-900">{formatCurrency(totalLiabilitiesAndEquity)}</span>
           </div>
         </div>
       </div>
@@ -1094,3 +1302,483 @@ function AccountsPayable({ expenses, today }: { expenses: Expense[], today: stri
     </div>
   );
 }
+
+interface AccountReconciliationSummary {
+  account: Account;
+  lastReconciledDate: string | null;
+  lastReconciledBalance: number | null;
+  hasDraft: boolean;
+  unreconciledItems: UnreconciledTxItem[];
+  unreconciledDeposits: number;
+  unreconciledWithdrawals: number;
+  netUnreconciled: number;
+  unmatchedStatementLines: BankStatementLine[];
+}
+
+function buildAccountReconciliationSummaries({
+  accounts,
+  journalEntries,
+  paidInvoices,
+  paidExpenses,
+  reconciliations,
+  statementLines,
+  dateRange,
+}: {
+  accounts: Account[];
+  journalEntries: JournalEntry[];
+  paidInvoices: Invoice[];
+  paidExpenses: Expense[];
+  reconciliations: ReconciliationRecord[];
+  statementLines: BankStatementLine[];
+  dateRange: { start: string; end: string };
+}): AccountReconciliationSummary[] {
+  const assetAccounts = accounts.filter((a) => a.type === 'Asset');
+  const targetAccounts = assetAccounts.length > 0 ? assetAccounts : accounts;
+  const primaryCashId =
+    (
+      targetAccounts.find((a) => a.code === '1000' || a.code === '1010') ||
+      targetAccounts[0]
+    )?.id || '';
+
+  return targetAccounts.map((account) => {
+    const accountReconciliations = reconciliations.filter((r) => r.account_id === account.id);
+    const completedRecs = accountReconciliations
+      .filter((r) => r.status === 'Completed')
+      .sort((a, b) => b.statement_date.localeCompare(a.statement_date));
+    const draftRecs = accountReconciliations.filter((r) => r.status === 'Draft');
+
+    const lockedIds = new Set<string>();
+    completedRecs.forEach((rec) => rec.cleared_item_ids.forEach((id) => lockedIds.add(id)));
+
+    const draftClearedIds = new Set<string>();
+    draftRecs.forEach((rec) => rec.cleared_item_ids.forEach((id) => draftClearedIds.add(id)));
+
+    const unreconciledItems: UnreconciledTxItem[] = [];
+
+    journalEntries
+      .filter(
+        (entry) =>
+          entry.status === 'Posted' &&
+          (!dateRange.start || entry.date >= dateRange.start) &&
+          (!dateRange.end || entry.date <= dateRange.end)
+      )
+      .forEach((entry) => {
+        entry.lines.forEach((line) => {
+          if (line.account_id === account.id && (line.debit > 0 || line.credit > 0)) {
+            const itemId = `JE:${entry.id}:${line.id}`;
+            if (lockedIds.has(itemId)) return;
+            const isDeposit = line.debit >= line.credit;
+            const amt = isDeposit ? line.debit - line.credit : line.credit - line.debit;
+            if (amt > 0) {
+              unreconciledItems.push({
+                id: itemId,
+                accountId: account.id,
+                accountLabel: `${account.code} · ${account.name}`,
+                date: entry.date,
+                source: 'Journal Entry',
+                reference: entry.id,
+                description: line.description || entry.description || 'Journal entry',
+                type: isDeposit ? 'Deposit' : 'Withdrawal',
+                amount: amt,
+                inDraft: draftClearedIds.has(itemId),
+              });
+            }
+          }
+        });
+      });
+
+    if (account.id === primaryCashId) {
+      paidInvoices
+        .filter(
+          (inv) =>
+            (!dateRange.start || inv.date >= dateRange.start) &&
+            (!dateRange.end || inv.date <= dateRange.end)
+        )
+        .forEach((inv) => {
+          const itemId = `INV:${inv.id}`;
+          if (lockedIds.has(itemId)) return;
+          unreconciledItems.push({
+            id: itemId,
+            accountId: account.id,
+            accountLabel: `${account.code} · ${account.name}`,
+            date: inv.date,
+            source: 'Paid Invoice',
+            reference: inv.id,
+            description: `${inv.client_name}${inv.description ? ` — ${inv.description}` : ''}`,
+            type: 'Deposit',
+            amount: Number(inv.amount || 0),
+            inDraft: draftClearedIds.has(itemId),
+          });
+        });
+
+      paidExpenses
+        .filter(
+          (exp) =>
+            (!dateRange.start || exp.date >= dateRange.start) &&
+            (!dateRange.end || exp.date <= dateRange.end)
+        )
+        .forEach((exp) => {
+          const itemId = `EXP:${exp.id}`;
+          if (lockedIds.has(itemId)) return;
+          unreconciledItems.push({
+            id: itemId,
+            accountId: account.id,
+            accountLabel: `${account.code} · ${account.name}`,
+            date: exp.date,
+            source: 'Paid Expense',
+            reference: exp.id,
+            description: `${exp.category}${exp.description ? ` — ${exp.description}` : ''}`,
+            type: 'Withdrawal',
+            amount: Number(exp.amount || 0),
+            inDraft: draftClearedIds.has(itemId),
+          });
+        });
+    }
+
+    unreconciledItems.sort((a, b) => b.date.localeCompare(a.date));
+
+    const unreconciledDeposits = unreconciledItems
+      .filter((i) => i.type === 'Deposit')
+      .reduce((sum, i) => sum + i.amount, 0);
+    const unreconciledWithdrawals = unreconciledItems
+      .filter((i) => i.type === 'Withdrawal')
+      .reduce((sum, i) => sum + i.amount, 0);
+
+    const unmatchedStatementLines = statementLines.filter(
+      (line) =>
+        line.account_id === account.id &&
+        line.status === 'Unmatched' &&
+        !line.reconciliation_id &&
+        (!dateRange.start || line.date >= dateRange.start) &&
+        (!dateRange.end || line.date <= dateRange.end)
+    );
+
+    return {
+      account,
+      lastReconciledDate: completedRecs[0]?.statement_date || null,
+      lastReconciledBalance: completedRecs[0]?.statement_ending_balance ?? null,
+      hasDraft: draftRecs.length > 0,
+      unreconciledItems,
+      unreconciledDeposits,
+      unreconciledWithdrawals,
+      netUnreconciled: unreconciledDeposits - unreconciledWithdrawals,
+      unmatchedStatementLines,
+    };
+  });
+}
+
+export function BankReconciliationStatusReport({
+  accounts,
+  journalEntries,
+  paidInvoices,
+  paidExpenses,
+  reconciliations,
+  statementLines,
+  dateRange,
+  onNavigateToReconciliation,
+}: {
+  accounts: Account[];
+  journalEntries: JournalEntry[];
+  paidInvoices: Invoice[];
+  paidExpenses: Expense[];
+  reconciliations: ReconciliationRecord[];
+  statementLines: BankStatementLine[];
+  dateRange: { start: string; end: string };
+  onNavigateToReconciliation?: () => void;
+}) {
+  const [selectedAccountFilter, setSelectedAccountFilter] = useState<string>('all');
+
+  const summaries = buildAccountReconciliationSummaries({
+    accounts,
+    journalEntries,
+    paidInvoices,
+    paidExpenses,
+    reconciliations,
+    statementLines,
+    dateRange,
+  });
+
+  const visibleSummaries =
+    selectedAccountFilter === 'all'
+      ? summaries
+      : summaries.filter((s) => s.account.id === selectedAccountFilter);
+
+  const totalUnreconciledCount = summaries.reduce((sum, s) => sum + s.unreconciledItems.length, 0);
+  const totalUnreconciledDeposits = summaries.reduce((sum, s) => sum + s.unreconciledDeposits, 0);
+  const totalUnreconciledWithdrawals = summaries.reduce((sum, s) => sum + s.unreconciledWithdrawals, 0);
+  const totalUnmatchedBankLines = summaries.reduce(
+    (sum, s) => sum + s.unmatchedStatementLines.length,
+    0
+  );
+  const accountsNeedingAttention = summaries.filter(
+    (s) => s.unreconciledItems.length > 0 || s.unmatchedStatementLines.length > 0
+  ).length;
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 pb-6">
+        <div>
+          <h2 className="text-2xl font-black text-jamaica-black uppercase tracking-tighter">
+            Bank Reconciliation Status
+          </h2>
+          <p className="text-slate-500 text-sm font-medium mt-1">
+            Unreconciled book transactions and unmatched statement lines per account for {dateRange.start} to {dateRange.end}
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={selectedAccountFilter}
+            onChange={(e) => setSelectedAccountFilter(e.target.value)}
+            aria-label="Filter by account"
+            className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+          >
+            <option value="all">All Asset / Bank Accounts ({summaries.length})</option>
+            {summaries.map((s) => (
+              <option key={s.account.id} value={s.account.id}>
+                {s.account.code} · {s.account.name} ({s.unreconciledItems.length} open)
+              </option>
+            ))}
+          </select>
+
+          {onNavigateToReconciliation && (
+            <button
+              type="button"
+              onClick={onNavigateToReconciliation}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <Scale size={14} />
+              Open Bank Reconciliation
+              <ArrowRight size={14} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Summary Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+          <p className="text-xs font-semibold text-slate-500">Accounts Needing Action</p>
+          <p className="mt-1.5 text-2xl font-bold font-mono tabular-nums text-slate-900">
+            {accountsNeedingAttention} / {summaries.length}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {totalUnmatchedBankLines} unmatched statement lines
+          </p>
+        </div>
+
+        <div className="bg-slate-50 p-5 rounded-2xl border border-slate-200">
+          <p className="text-xs font-semibold text-slate-500">Unreconciled Transactions</p>
+          <p className="mt-1.5 text-2xl font-bold font-mono tabular-nums text-slate-900">
+            {totalUnreconciledCount}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">Open book items in selected period</p>
+        </div>
+
+        <div className="bg-emerald-50/70 p-5 rounded-2xl border border-emerald-200">
+          <p className="text-xs font-semibold text-emerald-800">Unreconciled Deposits</p>
+          <p className="mt-1.5 text-2xl font-bold font-mono tabular-nums text-emerald-700">
+            {formatCurrency(totalUnreconciledDeposits)}
+          </p>
+          <p className="mt-1 text-xs text-emerald-800/80">Cash inflows awaiting clearing</p>
+        </div>
+
+        <div className="bg-rose-50/70 p-5 rounded-2xl border border-rose-200">
+          <p className="text-xs font-semibold text-rose-800">Unreconciled Withdrawals</p>
+          <p className="mt-1.5 text-2xl font-bold font-mono tabular-nums text-rose-700">
+            {formatCurrency(totalUnreconciledWithdrawals)}
+          </p>
+          <p className="mt-1 text-xs text-rose-800/80">Outflows & expenses awaiting clearing</p>
+        </div>
+      </div>
+
+      {/* Per-Account Sections */}
+      {visibleSummaries.length === 0 ? (
+        <div className="py-14 px-6 text-center border border-slate-200 rounded-2xl space-y-2">
+          <Scale size={30} className="mx-auto text-slate-400" />
+          <p className="text-base font-bold text-slate-900">No Asset or Bank accounts found</p>
+          <p className="text-sm text-slate-500">
+            Add a bank or cash account in Chart of Accounts to monitor monthly reconciliation readiness.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {visibleSummaries.map((summary) => {
+            const isClean =
+              summary.unreconciledItems.length === 0 &&
+              summary.unmatchedStatementLines.length === 0;
+
+            return (
+              <section
+                key={summary.account.id}
+                className="border border-slate-200 rounded-2xl overflow-hidden bg-white"
+              >
+                {/* Account Header Bar */}
+                <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="text-xs font-mono font-bold text-slate-500">
+                        {summary.account.code}
+                      </span>
+                      <h3 className="text-base font-bold text-slate-900">
+                        {summary.account.name}
+                      </h3>
+                      <span className="text-slate-300" aria-hidden="true">
+                        ·
+                      </span>
+                      <span
+                        className={cn(
+                          'inline-flex items-center gap-1.5 text-xs font-bold',
+                          isClean ? 'text-emerald-700' : 'text-amber-700'
+                        )}
+                      >
+                        {isClean ? (
+                          <>
+                            <CheckCircle2 size={14} />
+                            Balanced for Period
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle size={14} />
+                            {summary.unreconciledItems.length} Unreconciled
+                            {summary.unmatchedStatementLines.length > 0
+                              ? ` · ${summary.unmatchedStatementLines.length} Unmatched Bank Lines`
+                              : ''}
+                          </>
+                        )}
+                      </span>
+                      {summary.hasDraft && (
+                        <>
+                          <span className="text-slate-300" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="text-xs font-semibold text-brand-700">
+                            Draft in Progress
+                          </span>
+                        </>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-slate-500">
+                      Book Balance:{' '}
+                      <span className="font-mono font-semibold text-slate-800 tabular-nums">
+                        {formatCurrency(summary.account.balance)}
+                      </span>
+                      {' · '}
+                      {summary.lastReconciledDate
+                        ? `Last reconciled ${summary.lastReconciledDate} (${formatCurrency(summary.lastReconciledBalance || 0)})`
+                        : 'No completed reconciliations recorded yet'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-5 text-xs font-mono tabular-nums">
+                    <div>
+                      <span className="text-slate-500 font-sans">Open Inflows: </span>
+                      <span className="font-bold text-emerald-700">
+                        +{formatCurrency(summary.unreconciledDeposits)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-sans">Open Outflows: </span>
+                      <span className="font-bold text-rose-700">
+                        -{formatCurrency(summary.unreconciledWithdrawals)}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 font-sans">Net Open: </span>
+                      <span className="font-bold text-slate-900">
+                        {formatCurrency(summary.netUnreconciled)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Unreconciled Transactions Table */}
+                {summary.unreconciledItems.length === 0 ? (
+                  <div className="px-6 py-8 text-center text-sm text-slate-500">
+                    No unreconciled book transactions in this period for {summary.account.name}.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-xs font-semibold text-slate-500">
+                          <th className="py-2.5 px-6 whitespace-nowrap">Date</th>
+                          <th className="py-2.5 px-4 whitespace-nowrap">Source</th>
+                          <th className="py-2.5 px-4">Description & Reference</th>
+                          <th className="py-2.5 px-4 whitespace-nowrap">Status</th>
+                          <th className="py-2.5 px-4 text-right whitespace-nowrap">Withdrawal</th>
+                          <th className="py-2.5 px-6 text-right whitespace-nowrap">Deposit</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-sm">
+                        {summary.unreconciledItems.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-2.5 px-6 font-mono text-xs tabular-nums whitespace-nowrap text-slate-700">
+                              {item.date}
+                            </td>
+                            <td className="py-2.5 px-4 text-xs font-medium text-slate-600 whitespace-nowrap">
+                              {item.source}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              <p className="font-semibold text-slate-900">{item.description}</p>
+                              <p className="text-xs font-mono text-slate-500">Ref: {item.reference}</p>
+                            </td>
+                            <td className="py-2.5 px-4 text-xs font-semibold whitespace-nowrap">
+                              {item.inDraft ? (
+                                <span className="text-brand-700">Cleared in Draft</span>
+                              ) : (
+                                <span className="text-amber-700">Needs Clearing</span>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono text-xs tabular-nums font-semibold text-rose-700 whitespace-nowrap">
+                              {item.type === 'Withdrawal' ? formatCurrency(item.amount) : '—'}
+                            </td>
+                            <td className="py-2.5 px-6 text-right font-mono text-xs tabular-nums font-semibold text-emerald-700 whitespace-nowrap">
+                              {item.type === 'Deposit' ? formatCurrency(item.amount) : '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Unmatched Bank Statement Lines if present */}
+                {summary.unmatchedStatementLines.length > 0 && (
+                  <div className="border-t border-amber-200 bg-amber-50/40 px-6 py-4 space-y-2">
+                    <p className="text-xs font-bold text-amber-900">
+                      Unmatched Bank Statement Lines ({summary.unmatchedStatementLines.length}) — Missing from Books
+                    </p>
+                    <div className="divide-y divide-amber-200/60">
+                      {summary.unmatchedStatementLines.map((line) => (
+                        <div
+                          key={line.id}
+                          className="py-1.5 flex items-center justify-between gap-4 text-xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="font-mono tabular-nums text-amber-900 shrink-0">
+                              {line.date}
+                            </span>
+                            <span className="font-semibold text-slate-900 truncate">
+                              {line.description}
+                            </span>
+                          </div>
+                          <span className="font-mono tabular-nums font-bold text-amber-900 shrink-0">
+                            {line.type === 'Withdrawal' ? '-' : '+'}
+                            {formatCurrency(line.amount)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+

@@ -15,6 +15,7 @@ import {
   EyeOff,
   RefreshCw,
   ArrowLeft,
+  KeyRound,
 } from 'lucide-react';
 import { dataService } from '../services/dataService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -25,11 +26,40 @@ type AuthMode = 'login' | 'signup' | 'reset' | 'verify-email' | 'update-password
 interface AuthPageProps {
   onLogin: (user: any) => void;
   initialMode?: AuthMode;
+  initialPlan?: string;
   onPasswordUpdated?: () => void;
   onBackToHome?: () => void;
 }
 
-export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, onBackToHome }: AuthPageProps) {
+const SIGNUP_PLANS = [
+  {
+    id: 'essential',
+    name: 'Essential Monthly Bookkeeping',
+    price: 'From $149/mo',
+    summary: 'Up to 100 tx · 1 bank account · Monthly P&L & Balance Sheet',
+  },
+  {
+    id: 'growth',
+    name: 'Growth Bookkeeping & Tax Prep',
+    price: 'From $299/mo',
+    summary: 'Up to 300 tx · 3 accounts · AR/AP aging & G.C.T. prep',
+    recommended: true,
+  },
+  {
+    id: 'executive',
+    name: 'Full-Service & Advisory',
+    price: 'From $499/mo',
+    summary: 'Unlimited reconciliations · Payroll support & catch-up help',
+  },
+];
+
+export function AuthPage({
+  onLogin,
+  initialMode = 'login',
+  initialPlan = 'Essential Monthly Bookkeeping',
+  onPasswordUpdated,
+  onBackToHome,
+}: AuthPageProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [isLoading, setIsLoading] = useState(false);
   const [isResending, setIsResending] = useState(false);
@@ -38,17 +68,27 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
   const [needsConfirmationEmail, setNeedsConfirmationEmail] = useState<string | null>(null);
   const [networkFallbackReady, setNetworkFallbackReady] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'error' | 'success'; message: string } | null>(null);
+  const [hasInviteCode, setHasInviteCode] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     confirmPassword: '',
     name: '',
     company: '',
+    plan: initialPlan || 'Essential Monthly Bookkeeping',
   });
+  const matchedInvite = hasInviteCode && inviteCode.trim() ? dataService.findInviteByCode(inviteCode) : null;
 
   useEffect(() => {
     setMode(initialMode);
   }, [initialMode]);
+
+  useEffect(() => {
+    if (initialPlan) {
+      setFormData((prev) => ({ ...prev, plan: initialPlan }));
+    }
+  }, [initialPlan]);
 
   const switchMode = (nextMode: AuthMode) => {
     setFeedback(null);
@@ -124,13 +164,33 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
         }
 
         const existingIndex = users.findIndex((u: any) => u.email.toLowerCase() === email.toLowerCase());
+        let workspaceId =
+          existingIndex >= 0 && users[existingIndex].workspaceId
+            ? users[existingIndex].workspaceId
+            : `ws-${Math.random().toString(36).slice(2, 9)}`;
+        let assignedRole = 'Owner';
+        let assignedCompany = formData.company.trim() || 'Island Bookkeeping';
+
+        if (hasInviteCode && inviteCode.trim()) {
+          const accepted = dataService.acceptInviteByCode(inviteCode, {
+            name: formData.name,
+            email,
+            password: formData.password,
+          });
+          workspaceId = accepted.workspace_id;
+          assignedRole = accepted.role;
+          assignedCompany = accepted.workspace_name;
+        }
+
         const localUser = {
           id: existingIndex >= 0 ? users[existingIndex].id : Math.random().toString(36).slice(2, 11),
           name: formData.name.trim(),
-          company: formData.company.trim() || 'Island Bookkeeping',
-          role: 'Business Owner',
+          company: assignedCompany,
+          role: assignedRole,
+          plan: formData.plan,
           email,
           password: formData.password,
+          workspaceId,
           authMode: 'local',
         };
 
@@ -140,7 +200,6 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
           users.push(localUser);
         }
         dataService.saveUsers(users);
-        dataService.saveUser(localUser);
         onLogin(localUser);
         return;
       }
@@ -159,17 +218,21 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
           id: Math.random().toString(36).slice(2, 11),
           name: email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
           company: 'Island Bookkeeping',
-          role: 'Business Owner',
+          role: 'Owner',
           email,
           password: formData.password,
+          workspaceId: `ws-${Math.random().toString(36).slice(2, 9)}`,
           authMode: 'local',
         };
         users.push(user);
         dataService.saveUsers(users);
       }
 
-      dataService.saveUser(user);
-      onLogin(user);
+      if (dataService.isMemberSuspended(user.email, user.workspaceId)) {
+        throw new Error('Your access to this workspace has been suspended by an administrator.');
+      }
+
+      onLogin({ ...user, authMode: 'local' });
     } catch (err: any) {
       setFeedback({
         type: 'error',
@@ -250,6 +313,7 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
                 name: formData.name.trim(),
                 full_name: formData.name.trim(),
                 company: formData.company.trim() || 'Island Bookkeeping',
+                plan: formData.plan,
               },
             },
           });
@@ -324,17 +388,34 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
           throw new Error('An account with this email already exists.');
         }
 
+        let workspaceId = `ws-${Math.random().toString(36).slice(2, 9)}`;
+        let assignedRole = 'Owner';
+        let assignedCompany = formData.company.trim() || 'Island Bookkeeping';
+
+        if (hasInviteCode && inviteCode.trim()) {
+          const accepted = dataService.acceptInviteByCode(inviteCode, {
+            name: formData.name,
+            email,
+            password: formData.password,
+          });
+          workspaceId = accepted.workspace_id;
+          assignedRole = accepted.role;
+          assignedCompany = accepted.workspace_name;
+        }
+
         const newUser = {
           id: Math.random().toString(36).substr(2, 9),
           name: formData.name.trim(),
-          company: formData.company.trim() || 'Island Bookkeeping',
-          role: 'Business Owner',
+          company: assignedCompany,
+          role: assignedRole,
+          plan: formData.plan,
           email,
           password: formData.password,
+          workspaceId,
+          authMode: 'local',
         };
         users.push(newUser);
         dataService.saveUsers(users);
-        dataService.saveUser(newUser);
         onLogin(newUser);
       } else {
         const user = users.find(
@@ -343,8 +424,10 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
         if (!user) {
           throw new Error('Invalid email or password.');
         }
-        dataService.saveUser(user);
-        onLogin(user);
+        if (dataService.isMemberSuspended(user.email, user.workspaceId)) {
+          throw new Error('Your access to this workspace has been suspended by an administrator.');
+        }
+        onLogin({ ...user, authMode: 'local' });
       }
     } catch (error: any) {
       const rawMessage = String(error?.message || '');
@@ -595,6 +678,9 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
                 <p className="text-sm font-medium text-black leading-relaxed">
                   Click the confirmation link in your email to activate your account, then return here to sign in.
                 </p>
+                <p className="text-xs font-bold text-brand-700">
+                  Selected plan: {formData.plan}
+                </p>
               </div>
               <div className="flex flex-col gap-3">
                 <button
@@ -647,25 +733,136 @@ export function AuthPage({ onLogin, initialMode = 'login', onPasswordUpdated, on
                       </div>
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="block text-xs font-bold text-black uppercase tracking-wider ml-0.5">
-                        Company Name <span className="text-slate-700 font-semibold normal-case">(Optional)</span>
-                      </label>
-                      <div className="relative group">
-                        <Building2
-                          className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-brand-600 transition-colors"
-                          size={18}
-                        />
-                        <input
-                          type="text"
-                          autoComplete="organization"
-                          placeholder="Blue Mountain Logistics Ltd."
-                          value={formData.company}
-                          onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                          className="w-full pl-11 pr-4 py-3 bg-slate-50 focus:bg-white border-2 border-slate-300 focus:border-brand-600 rounded-xl text-sm font-semibold text-black placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 transition-all"
-                        />
+                    {!hasInviteCode && (
+                      <div className="space-y-1.5">
+                        <label className="block text-xs font-bold text-black uppercase tracking-wider ml-0.5">
+                          Company Name <span className="text-slate-700 font-semibold normal-case">(Optional)</span>
+                        </label>
+                        <div className="relative group">
+                          <Building2
+                            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-brand-600 transition-colors"
+                            size={18}
+                          />
+                          <input
+                            type="text"
+                            autoComplete="organization"
+                            placeholder="Blue Mountain Logistics Ltd."
+                            value={formData.company}
+                            onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                            className="w-full pl-11 pr-4 py-3 bg-slate-50 focus:bg-white border-2 border-slate-300 focus:border-brand-600 rounded-xl text-sm font-semibold text-black placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15 transition-all"
+                          />
+                        </div>
                       </div>
+                    )}
+
+                    {/* Team Invite Code Toggle */}
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-300 space-y-3">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={hasInviteCode}
+                          onChange={(e) => {
+                            setHasInviteCode(e.target.checked);
+                            if (!e.target.checked) setInviteCode('');
+                          }}
+                          className="w-4 h-4 rounded border-slate-400 text-brand-600 focus:ring-brand-500"
+                        />
+                        <span className="text-xs font-bold text-slate-900">
+                          Joining an existing team workspace with an invite code
+                        </span>
+                      </label>
+
+                      {hasInviteCode && (
+                        <div className="space-y-2">
+                          <div className="relative group">
+                            <KeyRound
+                              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-700 group-focus-within:text-brand-600 transition-colors"
+                              size={16}
+                            />
+                            <input
+                              type="text"
+                              placeholder="Enter invite code (e.g., ISL-4F9A-ACC)"
+                              value={inviteCode}
+                              onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+                              className="w-full pl-10 pr-4 py-2.5 bg-white border-2 border-slate-300 focus:border-brand-600 rounded-xl text-xs font-mono font-bold text-black placeholder:text-slate-500 focus:outline-none"
+                            />
+                          </div>
+                          {matchedInvite ? (
+                            <p className="text-xs font-bold text-emerald-700">
+                              Joining {matchedInvite.workspace_name} as {matchedInvite.role} ({matchedInvite.email})
+                            </p>
+                          ) : inviteCode.trim().length > 3 ? (
+                            <p className="text-xs font-semibold text-amber-700">
+                              Code not found yet — verify with your workspace owner.
+                            </p>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
+
+                    {!hasInviteCode && (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between ml-0.5">
+                          <label className="block text-xs font-bold text-black uppercase tracking-wider">
+                            Choose Your Plan
+                          </label>
+                          <span className="text-[11px] font-semibold text-slate-700">
+                            Starting at $149/mo
+                          </span>
+                        </div>
+                        <div role="radiogroup" aria-label="Choose your bookkeeping plan" className="space-y-2">
+                          {SIGNUP_PLANS.map((planOption) => {
+                            const isSelected = formData.plan === planOption.name;
+                            return (
+                              <button
+                                key={planOption.id}
+                                type="button"
+                                role="radio"
+                                aria-checked={isSelected}
+                                onClick={() => setFormData({ ...formData, plan: planOption.name })}
+                                className={cn(
+                                  'w-full text-left p-3 rounded-xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3',
+                                  isSelected
+                                    ? 'border-brand-600 bg-emerald-50/75 shadow-sm'
+                                    : 'border-slate-300 bg-slate-50 hover:bg-white hover:border-slate-400'
+                                )}
+                              >
+                                <div className="flex items-start gap-2.5 min-w-0">
+                                  <div
+                                    className={cn(
+                                      'mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors',
+                                      isSelected
+                                        ? 'border-brand-600 bg-brand-600 text-white'
+                                        : 'border-slate-400 bg-white'
+                                    )}
+                                  >
+                                    {isSelected && <CheckCircle2 size={12} />}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-x-1.5">
+                                      <span className="text-xs font-extrabold text-black leading-snug">
+                                        {planOption.name}
+                                      </span>
+                                      {planOption.recommended && (
+                                        <span className="text-[11px] font-bold text-brand-700">
+                                          · Popular
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[11px] font-medium text-slate-700 mt-0.5 leading-snug">
+                                      {planOption.summary}
+                                    </p>
+                                  </div>
+                                </div>
+                                <span className="text-xs font-mono font-extrabold text-black tabular-nums whitespace-nowrap shrink-0">
+                                  {planOption.price}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

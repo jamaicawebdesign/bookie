@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { hasPermission, normalizeRole } from '../lib/permissions';
 import { dataService } from '../services/dataService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { SettingsSection } from './TopBar';
@@ -52,6 +53,8 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
   const [activeSection, setActiveSection] = useState<SettingsSection>(initialSection);
   const [isSaving, setIsSaving] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const canManageBilling = hasPermission(user, 'manage_billing');
+  const canManageSecurity = hasPermission(user, 'manage_security');
 
   useEffect(() => {
     setActiveSection(initialSection);
@@ -136,14 +139,23 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
   const handleSaveProfileAndBilling = () => {
     setIsSaving(true);
     try {
-      dataService.saveSettings({
-        tax_rate: Number(billing.taxRate) || 0,
-        currency: billing.currency || 'USD',
-        invoice_prefix: billing.invoicePrefix.trim() || 'INV-',
-        notifications,
-      });
+      if (canManageBilling) {
+        dataService.saveSettings({
+          tax_rate: Number(billing.taxRate) || 0,
+          currency: billing.currency || 'USD',
+          invoice_prefix: billing.invoicePrefix.trim() || 'INV-',
+          notifications,
+        });
+      } else {
+        dataService.saveSettings({ notifications });
+      }
 
-      const updatedUser = dataService.saveUser(profile);
+      // Never allow non-owner self-elevation via profile form
+      const { role: _ignoredRole, ...safeProfile } = profile;
+      const updatedUser = dataService.saveUser({
+        ...safeProfile,
+        role: normalizeRole(user?.role),
+      });
       onUpdateUser(updatedUser);
       showNotice('Settings saved successfully');
     } catch (error) {
@@ -169,6 +181,10 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
   };
 
   const handleToggleTwoFactor = (enabled: boolean) => {
+    if (!canManageSecurity) {
+      showNotice('Only workspace Owners can modify 2FA settings', 'error');
+      return;
+    }
     const updated = { ...securitySettings, twoFactorEnabled: enabled };
     setSecuritySettings(updated);
     dataService.saveSecuritySettings(updated);
@@ -301,10 +317,14 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
                     <label className="text-sm font-semibold text-slate-700">Role</label>
                     <input
                       type="text"
-                      value={profile.role}
-                      onChange={(e) => setProfile({ ...profile, role: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all"
+                      readOnly
+                      disabled
+                      value={normalizeRole(profile.role)}
+                      className="w-full px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600 cursor-not-allowed"
                     />
+                    <p className="text-[11px] text-slate-500">
+                      Workspace roles are managed by Owners in Team &amp; Access.
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Company</label>
@@ -343,6 +363,12 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
                   <p className="text-sm text-slate-500">Set up your default tax rates, currency, and invoice numbering</p>
                 </div>
 
+                {!canManageBilling && (
+                  <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-800">
+                    Read-only view: Only workspace Owners can modify tax rates, currency, and invoice numbering.
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Default Sales Tax (%)</label>
@@ -352,9 +378,10 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
                         type="number"
                         step="0.1"
                         min="0"
+                        disabled={!canManageBilling}
                         value={billing.taxRate}
                         onChange={(e) => setBilling({ ...billing, taxRate: Number(e.target.value) })}
-                        className="w-full pl-12 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all"
+                        className="w-full pl-12 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                       />
                     </div>
                     <p className="text-[10px] text-slate-400 font-medium">This rate will be applied to all new invoices by default.</p>
@@ -362,9 +389,10 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-slate-700">Currency</label>
                     <select
+                      disabled={!canManageBilling}
                       value={billing.currency}
                       onChange={(e) => setBilling({ ...billing, currency: e.target.value })}
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                       <option value="USD">USD - US Dollar</option>
                       <option value="JMD">JMD - Jamaican Dollar</option>
@@ -376,24 +404,27 @@ export function SettingsPage({ user, onUpdateUser, initialSection = 'profile' }:
                     <label className="text-sm font-semibold text-slate-700">Invoice Number Prefix</label>
                     <input
                       type="text"
+                      disabled={!canManageBilling}
                       value={billing.invoicePrefix}
                       onChange={(e) => setBilling({ ...billing, invoicePrefix: e.target.value })}
                       placeholder="INV-"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/20 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end pt-2 border-t border-slate-100">
-                  <button
-                    type="button"
-                    disabled={isSaving}
-                    onClick={handleSaveProfileAndBilling}
-                    className="px-6 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 disabled:opacity-50"
-                  >
-                    {isSaving ? 'Saving...' : 'Save Billing Settings'}
-                  </button>
-                </div>
+                {canManageBilling && (
+                  <div className="flex justify-end pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={handleSaveProfileAndBilling}
+                      className="px-6 py-2.5 bg-brand-600 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-brand-700 transition-all shadow-lg shadow-brand-500/20 disabled:opacity-50"
+                    >
+                      {isSaving ? 'Saving...' : 'Save Billing Settings'}
+                    </button>
+                  </div>
+                )}
               </motion.div>
             )}
 

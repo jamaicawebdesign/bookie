@@ -127,3 +127,177 @@ export interface JournalLine {
   credit: number;
   description?: string;
 }
+
+export interface BankStatementLine {
+  id: string;
+  account_id: string;
+  date: string;
+  description: string;
+  reference?: string;
+  amount: number;
+  type: 'Deposit' | 'Withdrawal';
+  status: 'Unmatched' | 'Matched' | 'Adjusted';
+  matched_book_id?: string;
+  reconciliation_id?: string;
+}
+
+export interface ReconciliationRecord {
+  id: string;
+  account_id: string;
+  account_name: string;
+  statement_date: string;
+  beginning_balance: number;
+  statement_ending_balance: number;
+  cleared_book_balance: number;
+  difference: number;
+  cleared_count: number;
+  cleared_item_ids: string[];
+  statement_line_ids: string[];
+  status: 'Completed' | 'Draft';
+  notes?: string;
+  completed_at: string;
+}
+
+export type AuditLogCategory = 'Auth' | 'Transaction' | 'Ledger' | 'Reconciliation' | 'Security' | 'Team';
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  category: AuditLogCategory;
+  action: string;
+  details: string;
+  reference?: string;
+  status: 'Success' | 'Warning' | 'Info';
+}
+
+export type WorkspaceRole = 'Owner' | 'Accountant' | 'Bookkeeper' | 'Viewer';
+
+export type WorkspacePermission =
+  | 'view_financials'
+  | 'manage_transactions'
+  | 'manage_ledger'
+  | 'export_reports'
+  | 'manage_security'
+  | 'manage_team'
+  | 'manage_billing';
+
+export interface TeamMember {
+  id: string;
+  workspace_id: string;
+  name: string;
+  email: string;
+  role: WorkspaceRole;
+  status: 'Active' | 'Invited' | 'Suspended';
+  joined_at: string;
+  last_active?: string;
+  invited_by?: string;
+  photo?: string;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  workspace_id: string;
+  workspace_name: string;
+  email: string;
+  name: string;
+  role: WorkspaceRole;
+  invite_code: string;
+  status: 'Pending' | 'Accepted' | 'Revoked';
+  created_at: string;
+  created_by: string;
+}
+
+export type JamaicaTaxYear = '2025' | '2026';
+
+export interface JamaicaComplianceProfile {
+  trn: string;
+  nisNumber: string;
+  nhtNumber: string;
+  gctNumber: string;
+  taxYear: JamaicaTaxYear;
+  heartExempt: boolean;
+}
+
+export interface PayrollEmployee {
+  id: string;
+  name: string;
+  trn: string;
+  nisNumber: string;
+  position: string;
+  monthlyGross: number;
+  isPensioner65: boolean;
+  status: 'Active' | 'Inactive';
+}
+
+export interface EmployeePayrollBreakdown {
+  employeeId: string;
+  name: string;
+  trn: string;
+  nisNumber: string;
+  monthlyGross: number;
+  nisEmployee: number;
+  nisEmployer: number;
+  statutoryIncome: number;
+  nhtEmployee: number;
+  nhtEmployer: number;
+  edTaxEmployee: number;
+  edTaxEmployer: number;
+  heartEmployer: number;
+  paye: number;
+  totalEmployeeDeductions: number;
+  netPay: number;
+  totalEmployerContributions: number;
+  totalStatutoryRemittance: number;
+}
+
+export interface PayrollRunRecord {
+  id: string;
+  period: string; // YYYY-MM
+  payDate: string;
+  dueDate: string; // 14th of following month
+  taxYear: JamaicaTaxYear;
+  employees: EmployeePayrollBreakdown[];
+  totals: {
+    grossPay: number;
+    nisEmployee: number;
+    nisEmployer: number;
+    nhtEmployee: number;
+    nhtEmployer: number;
+    edTaxEmployee: number;
+    edTaxEmployer: number;
+    heartEmployer: number;
+    paye: number;
+    netPay: number;
+    totalEmployerContributions: number;
+    totalS01Remittance: number;
+  };
+  status: 'Draft' | 'Filed S01' | 'Remitted';
+  journalEntryId?: string;
+  createdAt: string;
+}
+
+export interface GctReturnRecord {
+  id: string;
+  period: string; // YYYY-MM
+  dueDate: string;
+  standardRatedSales: number;
+  zeroRatedSales: number;
+  exemptSupplies: number;
+  outputTax: number;
+  taxablePurchases: number;
+  inputTax: number;
+  creditBroughtForward: number;
+  netGctPayable: number;
+  status: 'Draft' | 'Filed' | 'Paid';
+  filedAt?: string;
+  notes?: string;
+}
+
+export interface JamaicaComplianceState {
+  profile: JamaicaComplianceProfile;
+  employees: PayrollEmployee[];
+  payrollRuns: PayrollRunRecord[];
+  gctReturns: GctReturnRecord[];
+}
+

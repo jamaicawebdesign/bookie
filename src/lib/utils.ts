@@ -74,3 +74,11 @@ export function formatLocalDate(date: Date = new Date()): string {
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
+
+export function sanitizeCsvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  const isPureNumber = /^-?\d+(\.\d+)?$/.test(raw.trim());
+  const neutralized = !isPureNumber && /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return `"${neutralized.replace(/"/g, '""')}"`;
+}
+
