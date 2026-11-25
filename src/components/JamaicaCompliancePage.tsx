@@ -16,6 +16,8 @@ import {
   Edit2,
   X,
   BookCheck,
+  Calculator,
+  Receipt,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -25,21 +27,24 @@ import {
   JamaicaComplianceProfile,
   JamaicaComplianceState,
   JamaicaTaxYear,
+  PayFrequency,
   PayrollEmployee,
   PayrollRunRecord,
 } from '../types';
 import { dataService } from '../services/dataService';
 import {
   calculateEmployeeMonthlyPayroll,
+  calculateStatutoryDeductions,
   formatJMD,
   getGct4ADueDate,
   getS01DueDate,
   JAMAICA_STATUTORY_CONFIG,
+  PAY_FREQUENCY_PERIODS,
 } from '../lib/jamaicaTax';
 import { cn, formatLocalDate, sanitizeCsvCell } from '../lib/utils';
 import { ConfirmationModal } from './ConfirmationModal';
 
-type ComplianceTab = 'gct-4a' | 'payroll' | 's01' | 's02';
+type ComplianceTab = 'statutory-calc' | 'payroll' | 's01' | 's02' | 'gct-4a';
 
 function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
@@ -53,7 +58,7 @@ function getCurrentMonthYYYYMM(): string {
 }
 
 export const JamaicaCompliancePage: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<ComplianceTab>('gct-4a');
+  const [activeTab, setActiveTab] = useState<ComplianceTab>('statutory-calc');
   const [compliance, setCompliance] = useState<JamaicaComplianceState>(() =>
     dataService.getJamaicaCompliance()
   );
@@ -68,6 +73,18 @@ export const JamaicaCompliancePage: React.FC = () => {
     message: string;
   } | null>(null);
 
+  // Interactive NIS / NHT / HEART / Ed Tax / PAYE Calculator state
+  const [calcGross, setCalcGross] = useState<number>(250000);
+  const [calcFrequency, setCalcFrequency] = useState<PayFrequency>('Monthly');
+  const [calcTaxYear, setCalcTaxYear] = useState<JamaicaTaxYear>(
+    () => dataService.getJamaicaCompliance().profile.taxYear || '2026'
+  );
+  const [calcPension, setCalcPension] = useState<number>(0);
+  const [calcPensioner65, setCalcPensioner65] = useState<boolean>(false);
+  const [calcHeartExempt, setCalcHeartExempt] = useState<boolean>(
+    () => dataService.getJamaicaCompliance().profile.heartExempt || false
+  );
+
   // GCT Form 4A state
   const [gctPeriod, setGctPeriod] = useState<string>(getCurrentMonthYYYYMM);
   const [gctDraft, setGctDraft] = useState<GctReturnRecord | null>(null);
@@ -77,12 +94,26 @@ export const JamaicaCompliancePage: React.FC = () => {
   const [payDate, setPayDate] = useState<string>(() => formatLocalDate());
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<PayrollEmployee | null>(null);
+  const [payslipEmployee, setPayslipEmployee] = useState<PayrollEmployee | null>(null);
   const [deleteEmployeeId, setDeleteEmployeeId] = useState<string | null>(null);
 
   // S01 / S02 state
   const [selectedS01RunId, setSelectedS01RunId] = useState<string>('');
   const [s02Year, setS02Year] = useState<JamaicaTaxYear>(
     () => dataService.getJamaicaCompliance().profile.taxYear || '2026'
+  );
+
+  const calcResult = useMemo(
+    () =>
+      calculateStatutoryDeductions({
+        grossPay: calcGross,
+        taxYear: calcTaxYear,
+        payFrequency: calcFrequency,
+        approvedPension: calcPension,
+        isPensioner65: calcPensioner65,
+        heartExempt: calcHeartExempt,
+      }),
+    [calcGross, calcTaxYear, calcFrequency, calcPension, calcPensioner65, calcHeartExempt]
   );
 
   const reloadData = () => {
@@ -650,6 +681,114 @@ export const JamaicaCompliancePage: React.FC = () => {
     downloadCsv(csv, `TAJ_S02_P24_Summary_${s02Year}.csv`);
   };
 
+  const handleExportCalcPdf = () => {
+    const doc = new jsPDF();
+    const user = dataService.getUser();
+    doc.setFontSize(16);
+    doc.text('Jamaica Statutory Payroll Breakdown (NIS, NHT, HEART, Ed Tax & PAYE)', 14, 18);
+    doc.setFontSize(10);
+    doc.text(
+      `Organization: ${user?.company || 'Workspace Business'} | Tax Year: ${calcTaxYear} | Frequency: ${calcFrequency}`,
+      14,
+      26
+    );
+    doc.text(
+      `Gross Pay: ${formatJMD(calcResult.grossPay)} | Net Take-Home: ${formatJMD(calcResult.netPay)} | Total TAJ Remittance: ${formatJMD(calcResult.totalTajRemittance)}`,
+      14,
+      32
+    );
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Statutory Item', 'Basis / Rate', 'Employee (JMD)', 'Employer (JMD)', 'Total TAJ (JMD)']],
+      body: [
+        [
+          'NIS (National Insurance Scheme)',
+          calcResult.nisCapped ? '3% EE / 3% ER (Capped at J$5M/yr)' : '3% EE / 3% ER',
+          formatJMD(calcResult.nisEmployee),
+          formatJMD(calcResult.nisEmployer),
+          formatJMD(calcResult.nisEmployee + calcResult.nisEmployer),
+        ],
+        [
+          'NHT (National Housing Trust)',
+          '2% EE / 3% ER on Gross',
+          formatJMD(calcResult.nhtEmployee),
+          formatJMD(calcResult.nhtEmployer),
+          formatJMD(calcResult.nhtEmployee + calcResult.nhtEmployer),
+        ],
+        [
+          'Education Tax (Ed Tax)',
+          '2.25% EE / 3.5% ER on Statutory Income',
+          formatJMD(calcResult.edTaxEmployee),
+          formatJMD(calcResult.edTaxEmployer),
+          formatJMD(calcResult.edTaxEmployee + calcResult.edTaxEmployer),
+        ],
+        [
+          'HEART / NSTA Trust',
+          calcHeartExempt ? 'Exempt' : '3% ER on Gross Wage Bill',
+          formatJMD(0),
+          formatJMD(calcResult.heartEmployer),
+          formatJMD(calcResult.heartEmployer),
+        ],
+        [
+          'PAYE (Income Tax)',
+          `0% <= ${formatJMD(calcResult.payeThreshold)} | 25% / 30%`,
+          formatJMD(calcResult.paye),
+          formatJMD(0),
+          formatJMD(calcResult.paye),
+        ],
+        [
+          'TOTAL STATUTORY',
+          `${calcFrequency} Cycle`,
+          formatJMD(calcResult.totalEmployeeStatutory),
+          formatJMD(calcResult.totalEmployerContributions),
+          formatJMD(calcResult.totalTajRemittance),
+        ],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [0, 119, 73] },
+    });
+
+    doc.save(`Jamaica_Statutory_Breakdown_${calcFrequency}_${calcTaxYear}.pdf`);
+  };
+
+  const handleExportCalcCsv = () => {
+    const headers = ['Frequency', 'Tax_Year', 'Fund', 'Employee_JMD', 'Employer_JMD', 'Total_TAJ_JMD'];
+    const rows = [
+      [calcFrequency, calcTaxYear, 'NIS', calcResult.nisEmployee.toFixed(2), calcResult.nisEmployer.toFixed(2), (calcResult.nisEmployee + calcResult.nisEmployer).toFixed(2)],
+      [calcFrequency, calcTaxYear, 'NHT', calcResult.nhtEmployee.toFixed(2), calcResult.nhtEmployer.toFixed(2), (calcResult.nhtEmployee + calcResult.nhtEmployer).toFixed(2)],
+      [calcFrequency, calcTaxYear, 'Education Tax', calcResult.edTaxEmployee.toFixed(2), calcResult.edTaxEmployer.toFixed(2), (calcResult.edTaxEmployee + calcResult.edTaxEmployer).toFixed(2)],
+      [calcFrequency, calcTaxYear, 'HEART/NSTA Trust', '0.00', calcResult.heartEmployer.toFixed(2), calcResult.heartEmployer.toFixed(2)],
+      [calcFrequency, calcTaxYear, 'PAYE', calcResult.paye.toFixed(2), '0.00', calcResult.paye.toFixed(2)],
+      [calcFrequency, calcTaxYear, 'Gross Pay', calcResult.grossPay.toFixed(2), '', ''],
+      [calcFrequency, calcTaxYear, 'Net Take-Home Pay', calcResult.netPay.toFixed(2), '', ''],
+    ];
+    const csv = [
+      headers.map(sanitizeCsvCell).join(','),
+      ...rows.map((r) => r.map(sanitizeCsvCell).join(',')),
+    ].join('\n');
+    downloadCsv(csv, `Jamaica_Statutory_Breakdown_${calcFrequency}_${calcTaxYear}.csv`);
+  };
+
+  const handleAddCalculatedToRoster = () => {
+    const periods = PAY_FREQUENCY_PERIODS[calcFrequency];
+    const normalizedMonthlyGross = round2((calcGross * periods) / 12);
+    const normalizedMonthlyPension = round2((calcPension * periods) / 12);
+    setEditingEmployee({
+      id: '',
+      name: '',
+      trn: '',
+      nisNumber: '',
+      position: '',
+      monthlyGross: normalizedMonthlyGross,
+      approvedPension: normalizedMonthlyPension,
+      payFrequency: calcFrequency,
+      isPensioner65: calcPensioner65,
+      status: 'Active',
+    });
+    setIsEmployeeModalOpen(true);
+  };
+
   const activeTaxConfig = JAMAICA_STATUTORY_CONFIG[profileDraft.taxYear];
 
   return (
@@ -817,10 +956,11 @@ export const JamaicaCompliancePage: React.FC = () => {
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {(
           [
-            { id: 'gct-4a', label: 'GCT Form 4A', icon: FileText },
-            { id: 'payroll', label: 'Payroll & NIS/NHT', icon: Users },
+            { id: 'statutory-calc', label: 'NIS, NHT, HEART, Ed Tax & PAYE', icon: Calculator },
+            { id: 'payroll', label: 'Payroll Roster & Runs', icon: Users },
             { id: 's01', label: 'S01 Monthly Return', icon: Calendar },
             { id: 's02', label: 'S02 Annual Return (P24)', icon: Building2 },
+            { id: 'gct-4a', label: 'GCT Form 4A', icon: FileText },
           ] as const
         ).map((tab) => {
           const Icon = tab.icon;
@@ -831,7 +971,7 @@ export const JamaicaCompliancePage: React.FC = () => {
               type="button"
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border',
+                'inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer border whitespace-nowrap shrink-0',
                 active
                   ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -843,6 +983,343 @@ export const JamaicaCompliancePage: React.FC = () => {
           );
         })}
       </div>
+
+      {/* TAB 0: INTERACTIVE NIS, NHT, HEART, ED TAX & PAYE CALCULATOR */}
+      {activeTab === 'statutory-calc' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                  Jamaica Statutory Payroll Engine — NIS, NHT, HEART, Ed Tax &amp; PAYE
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Compute employee withholdings, employer contributions, and net take-home pay across Monthly, Fortnightly, Weekly, or Annual pay cycles.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportCalcPdf}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <Download size={14} />
+                  Export PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExportCalcCsv}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 whitespace-nowrap shrink-0 cursor-pointer"
+                >
+                  <FileSpreadsheet size={14} />
+                  Export CSV
+                </button>
+                {canManageLedger && (
+                  <button
+                    type="button"
+                    onClick={handleAddCalculatedToRoster}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-xs font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Plus size={14} />
+                    Add to Payroll Roster
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Calculator Inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Gross Emoluments (JMD)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="100"
+                  value={calcGross}
+                  onChange={(e) =>
+                    setCalcGross(Math.max(0, parseFloat(e.target.value) || 0))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono tabular-nums text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Pay Frequency
+                </label>
+                <select
+                  value={calcFrequency}
+                  onChange={(e) => setCalcFrequency(e.target.value as PayFrequency)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="Monthly">Monthly (12 / yr)</option>
+                  <option value="Fortnightly">Fortnightly (26 / yr)</option>
+                  <option value="Weekly">Weekly (52 / yr)</option>
+                  <option value="Annual">Annual (1 / yr)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  TAJ Tax Year
+                </label>
+                <select
+                  value={calcTaxYear}
+                  onChange={(e) => setCalcTaxYear(e.target.value as JamaicaTaxYear)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                >
+                  <option value="2026">2026 (J$1,902,360/yr)</option>
+                  <option value="2025">2025 (J$1,799,376/yr)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Approved Pension (JMD)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step="100"
+                  value={calcPension}
+                  onChange={(e) =>
+                    setCalcPension(Math.max(0, parseFloat(e.target.value) || 0))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 font-mono tabular-nums text-sm font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-6 text-xs font-semibold text-slate-700">
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={calcPensioner65}
+                  onChange={(e) => setCalcPensioner65(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-brand-600"
+                />
+                Age 65+ / Pensioner Relief (NIS exempt + J$250,040/yr extra threshold)
+              </label>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={calcHeartExempt}
+                  onChange={(e) => setCalcHeartExempt(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-brand-600"
+                />
+                HEART/NSTA Exempt Employer (Wage bill below exemption threshold)
+              </label>
+            </div>
+
+            {/* 5 Statutory Fund Breakdown Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  1. NIS
+                </div>
+                <p className="text-xs text-slate-500">
+                  3% EE / 3% ER {calcResult.nisCapped ? '· Capped at J$5M/yr' : '· Insurable pay'}
+                </p>
+                <div className="pt-2 border-t border-slate-200/80 space-y-1 text-xs font-mono tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employee</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.nisEmployee)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employer</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.nisEmployer)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  2. NHT
+                </div>
+                <p className="text-xs text-slate-500">
+                  2% EE / 3% ER · Full gross
+                </p>
+                <div className="pt-2 border-t border-slate-200/80 space-y-1 text-xs font-mono tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employee</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.nhtEmployee)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employer</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.nhtEmployer)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  3. HEART / NSTA
+                </div>
+                <p className="text-xs text-slate-500">
+                  {calcHeartExempt ? 'Exempt · 0% ER' : '0% EE / 3% ER · Gross bill'}
+                </p>
+                <div className="pt-2 border-t border-slate-200/80 space-y-1 text-xs font-mono tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employee</span>
+                    <span className="font-bold text-slate-400">{formatJMD(0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employer</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.heartEmployer)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  4. Education Tax
+                </div>
+                <p className="text-xs text-slate-500">
+                  2.25% EE / 3.5% ER · Statutory Inc.
+                </p>
+                <div className="pt-2 border-t border-slate-200/80 space-y-1 text-xs font-mono tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employee</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.edTaxEmployee)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Employer</span>
+                    <span className="font-bold text-slate-900">{formatJMD(calcResult.edTaxEmployer)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2">
+                <div className="text-[11px] font-black uppercase tracking-wider text-emerald-900">
+                  5. PAYE (Income Tax)
+                </div>
+                <p className="text-xs text-emerald-800">
+                  25% / 30% above {formatJMD(calcResult.payeThreshold)}
+                </p>
+                <div className="pt-2 border-t border-emerald-200/80 space-y-1 text-xs font-mono tabular-nums">
+                  <div className="flex justify-between">
+                    <span className="text-emerald-800">Employee</span>
+                    <span className="font-black text-emerald-950">{formatJMD(calcResult.paye)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-emerald-800">Employer</span>
+                    <span className="font-bold text-emerald-700">{formatJMD(0)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step TAJ Formula Waterfall */}
+            <div className="overflow-x-auto rounded-xl border border-slate-200">
+              <table className="w-full text-left border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-600">
+                    <th className="py-3 px-4">TAJ Calculation Step</th>
+                    <th className="py-3 px-4">Statutory Rule</th>
+                    <th className="py-3 px-4 text-right">Amount ({calcFrequency} JMD)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  <tr>
+                    <td className="py-2.5 px-4 font-bold text-slate-900">Gross Emoluments</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">Base taxable salary &amp; allowances</td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-slate-900">
+                      {formatJMD(calcResult.grossPay)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 text-slate-800">Less: Employee NIS (3%)</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      {calcPensioner65
+                        ? 'Exempt (Age 65+ / Pensioner)'
+                        : `3% of ${formatJMD(calcResult.nisInsurablePay)} insurable wage`}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums text-rose-700">
+                      -{formatJMD(calcResult.nisEmployee)}
+                    </td>
+                  </tr>
+                  {calcResult.approvedPension > 0 && (
+                    <tr>
+                      <td className="py-2.5 px-4 text-slate-800">Less: Approved Pension</td>
+                      <td className="py-2.5 px-4 text-xs text-slate-600">
+                        Deductible before Education Tax &amp; PAYE
+                      </td>
+                      <td className="py-2.5 px-4 text-right font-mono tabular-nums text-rose-700">
+                        -{formatJMD(calcResult.approvedPension)}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="bg-slate-50/70">
+                    <td className="py-2.5 px-4 font-bold text-slate-900">Statutory Income</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      Base for Education Tax (2.25% EE / 3.5% ER) and PAYE
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-slate-900">
+                      {formatJMD(calcResult.statutoryIncome)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 text-slate-800">Less: Tax-Free PAYE Threshold</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      {calcTaxYear} TAJ threshold ÷ {calcResult.periodsPerYear} periods
+                      {calcPensioner65 ? ' (includes Age 65+ relief)' : ''}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums text-slate-700">
+                      {formatJMD(calcResult.payeThreshold)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 font-semibold text-slate-900">Chargeable Income for PAYE</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      25% ({formatJMD(calcResult.payeStandard25)}) + 30% ({formatJMD(calcResult.payeHigher30)})
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-slate-900">
+                      {formatJMD(calcResult.chargeableIncome)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 text-slate-800">Total Employee Deductions</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      NIS ({formatJMD(calcResult.nisEmployee)}) + NHT ({formatJMD(calcResult.nhtEmployee)}) + EdTax ({formatJMD(calcResult.edTaxEmployee)}) + PAYE ({formatJMD(calcResult.paye)})
+                      {calcResult.approvedPension > 0 ? ` + Pension (${formatJMD(calcResult.approvedPension)})` : ''}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-rose-700">
+                      -{formatJMD(calcResult.totalEmployeeDeductions)}
+                    </td>
+                  </tr>
+                  <tr className="bg-emerald-50">
+                    <td className="py-3 px-4 font-black text-emerald-950">Net Take-Home Pay</td>
+                    <td className="py-3 px-4 text-xs text-emerald-800">Paid to employee</td>
+                    <td className="py-3 px-4 text-right font-mono tabular-nums font-black text-base text-emerald-950">
+                      {formatJMD(calcResult.netPay)}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td className="py-2.5 px-4 text-slate-800">Employer Statutory Contributions</td>
+                    <td className="py-2.5 px-4 text-xs text-slate-600">
+                      NIS 3% + NHT 3% + EdTax 3.5% + HEART {calcHeartExempt ? '0%' : '3%'}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono tabular-nums font-bold text-slate-900">
+                      {formatJMD(calcResult.totalEmployerContributions)}
+                    </td>
+                  </tr>
+                  <tr className="bg-slate-900 text-white">
+                    <td className="py-3.5 px-4 font-black">Total TAJ Statutory Remittance (S01)</td>
+                    <td className="py-3.5 px-4 text-xs text-slate-300">
+                      Total Cost to Employer: {formatJMD(calcResult.totalEmployerCost)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-mono tabular-nums font-black text-base">
+                      {formatJMD(calcResult.totalTajRemittance)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: GCT FORM 4A */}
       {activeTab === 'gct-4a' && gctDraft && (
@@ -1340,7 +1817,7 @@ export const JamaicaCompliancePage: React.FC = () => {
                       <th className="py-3 px-3 text-right">HEART (ER)</th>
                       <th className="py-3 px-3 text-right">PAYE</th>
                       <th className="py-3 px-3 text-right">Net Pay</th>
-                      {canManageLedger && <th className="py-3 px-3 text-right">Actions</th>}
+                      <th className="py-3 px-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1399,31 +1876,42 @@ export const JamaicaCompliancePage: React.FC = () => {
                           <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-emerald-700">
                             {formatJMD(calc.netPay)}
                           </td>
-                          {canManageLedger && (
-                            <td className="py-3 px-3 text-right">
-                              <div className="inline-flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingEmployee(emp);
-                                    setIsEmployeeModalOpen(true);
-                                  }}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-brand-50 cursor-pointer"
-                                  aria-label={`Edit ${emp.name}`}
-                                >
-                                  <Edit2 size={14} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDeleteEmployeeId(emp.id)}
-                                  className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
-                                  aria-label={`Remove ${emp.name}`}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </td>
-                          )}
+                          <td className="py-3 px-3 text-right">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setPayslipEmployee(emp)}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-100 font-bold cursor-pointer"
+                                aria-label={`View payslip for ${emp.name}`}
+                              >
+                                <Receipt size={12} />
+                                Payslip
+                              </button>
+                              {canManageLedger && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingEmployee(emp);
+                                      setIsEmployeeModalOpen(true);
+                                    }}
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-brand-600 hover:bg-brand-50 cursor-pointer"
+                                    aria-label={`Edit ${emp.name}`}
+                                  >
+                                    <Edit2 size={14} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeleteEmployeeId(emp.id)}
+                                    className="p-1.5 rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                                    aria-label={`Remove ${emp.name}`}
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}
@@ -2003,6 +2491,18 @@ export const JamaicaCompliancePage: React.FC = () => {
         />
       )}
 
+      {/* Employee Statutory Payslip Modal */}
+      {payslipEmployee && (
+        <EmployeePayslipModal
+          employee={payslipEmployee}
+          period={payrollPeriod}
+          taxYear={profileDraft.taxYear}
+          heartExempt={profileDraft.heartExempt}
+          profile={profileDraft}
+          onClose={() => setPayslipEmployee(null)}
+        />
+      )}
+
       <ConfirmationModal
         isOpen={Boolean(deleteEmployeeId)}
         onClose={() => setDeleteEmployeeId(null)}
@@ -2063,6 +2563,7 @@ const PayrollEmployeeModal: React.FC<EmployeeModalProps> = ({
       nisNumber: '',
       position: '',
       monthlyGross: 250000,
+      approvedPension: 0,
       isPensioner65: false,
       status: 'Active',
     }
@@ -2084,7 +2585,7 @@ const PayrollEmployeeModal: React.FC<EmployeeModalProps> = ({
       <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-xl shadow-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="text-base font-black text-slate-900">
-            {initialData ? 'Edit Payroll Employee' : 'Add Payroll Employee'}
+            {initialData?.id ? 'Edit Payroll Employee' : 'Add Payroll Employee'}
           </h3>
           <button
             type="button"
@@ -2167,6 +2668,24 @@ const PayrollEmployeeModal: React.FC<EmployeeModalProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                Approved Pension (JMD/mo)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.approvedPension || 0}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    approvedPension: Math.max(0, parseFloat(e.target.value) || 0),
+                  })
+                }
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 font-mono text-xs font-bold text-slate-900"
+              />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
                 Employment Status
               </label>
               <select
@@ -2207,7 +2726,7 @@ const PayrollEmployeeModal: React.FC<EmployeeModalProps> = ({
               <div>NHT EE: {formatJMD(preview.nhtEmployee)}</div>
               <div>EdTax EE: {formatJMD(preview.edTaxEmployee)}</div>
               <div>PAYE: {formatJMD(preview.paye)}</div>
-              <div>Employer Cost: {formatJMD(preview.totalEmployerContributions)}</div>
+              <div>HEART ER: {formatJMD(preview.heartEmployer)}</div>
               <div className="font-black text-emerald-700">
                 Net: {formatJMD(preview.netPay)}
               </div>
@@ -2230,6 +2749,181 @@ const PayrollEmployeeModal: React.FC<EmployeeModalProps> = ({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+};
+
+interface EmployeePayslipModalProps {
+  employee: PayrollEmployee;
+  period: string;
+  taxYear: JamaicaTaxYear;
+  heartExempt: boolean;
+  profile: JamaicaComplianceProfile;
+  onClose: () => void;
+}
+
+const EmployeePayslipModal: React.FC<EmployeePayslipModalProps> = ({
+  employee,
+  period,
+  taxYear,
+  heartExempt,
+  profile,
+  onClose,
+}) => {
+  const result = useMemo(
+    () =>
+      calculateStatutoryDeductions({
+        grossPay: employee.monthlyGross,
+        taxYear,
+        payFrequency: 'Monthly',
+        approvedPension: employee.approvedPension || 0,
+        isPensioner65: employee.isPensioner65,
+        heartExempt,
+      }),
+    [employee, taxYear, heartExempt]
+  );
+
+  const handleDownloadPdf = () => {
+    const doc = new jsPDF();
+    const user = dataService.getUser();
+    doc.setFontSize(16);
+    doc.text('Employee Statutory Payslip (Jamaica TAJ)', 14, 18);
+    doc.setFontSize(10);
+    doc.text(
+      `Employer: ${user?.company || 'Workspace Business'} | TRN: ${
+        profile.trn || 'N/A'
+      } | NIS #: ${profile.nisNumber || 'N/A'}`,
+      14,
+      26
+    );
+    doc.text(
+      `Employee: ${employee.name} (${employee.position || 'Staff'}) | TRN: ${
+        employee.trn || 'N/A'
+      } | NIS #: ${employee.nisNumber || 'N/A'}`,
+      14,
+      32
+    );
+    doc.text(`Pay Period: ${period} | Tax Year: ${taxYear}`, 14, 38);
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Description', 'Employee (JMD)', 'Employer (JMD)']],
+      body: [
+        ['Gross Monthly Emoluments', formatJMD(result.grossPay), '—'],
+        ['NIS (3% EE / 3% ER)', formatJMD(result.nisEmployee), formatJMD(result.nisEmployer)],
+        ['NHT (2% EE / 3% ER)', formatJMD(result.nhtEmployee), formatJMD(result.nhtEmployer)],
+        ['Education Tax (2.25% EE / 3.5% ER)', formatJMD(result.edTaxEmployee), formatJMD(result.edTaxEmployer)],
+        ['HEART / NSTA Trust (3% ER)', '—', formatJMD(result.heartEmployer)],
+        ['PAYE (Income Tax)', formatJMD(result.paye), '—'],
+        ...(result.approvedPension > 0
+          ? [['Approved Pension Deduction', formatJMD(result.approvedPension), '—']]
+          : []),
+        ['Net Pay Disbursed', formatJMD(result.netPay), '—'],
+      ],
+      theme: 'grid',
+      headStyles: { fillColor: [0, 119, 73] },
+    });
+
+    doc.save(`Payslip_${employee.name.replace(/\s+/g, '_')}_${period}.pdf`);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl border border-slate-200 w-full max-w-xl shadow-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-black text-slate-900">
+              Statutory Payslip — {employee.name}
+            </h3>
+            <p className="text-xs text-slate-500">
+              Period {period} · TRN {employee.trn || 'N/A'} · NIS {employee.nisNumber || 'N/A'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-600">
+                  <th className="py-2.5 px-3">Statutory Item</th>
+                  <th className="py-2.5 px-3 text-right">Employee (JMD)</th>
+                  <th className="py-2.5 px-3 text-right">Employer (JMD)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-mono tabular-nums">
+                <tr>
+                  <td className="py-2.5 px-3 font-sans font-bold text-slate-900">Gross Salary</td>
+                  <td className="py-2.5 px-3 text-right font-bold">{formatJMD(result.grossPay)}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 px-3 font-sans text-slate-700">NIS (3% EE / 3% ER)</td>
+                  <td className="py-2.5 px-3 text-right text-rose-700">-{formatJMD(result.nisEmployee)}</td>
+                  <td className="py-2.5 px-3 text-right">{formatJMD(result.nisEmployer)}</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 px-3 font-sans text-slate-700">NHT (2% EE / 3% ER)</td>
+                  <td className="py-2.5 px-3 text-right text-rose-700">-{formatJMD(result.nhtEmployee)}</td>
+                  <td className="py-2.5 px-3 text-right">{formatJMD(result.nhtEmployer)}</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 px-3 font-sans text-slate-700">Education Tax (2.25% / 3.5%)</td>
+                  <td className="py-2.5 px-3 text-right text-rose-700">-{formatJMD(result.edTaxEmployee)}</td>
+                  <td className="py-2.5 px-3 text-right">{formatJMD(result.edTaxEmployer)}</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 px-3 font-sans text-slate-700">HEART / NSTA (3% ER)</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                  <td className="py-2.5 px-3 text-right">{formatJMD(result.heartEmployer)}</td>
+                </tr>
+                <tr>
+                  <td className="py-2.5 px-3 font-sans text-slate-700">PAYE (Income Tax)</td>
+                  <td className="py-2.5 px-3 text-right text-rose-700">-{formatJMD(result.paye)}</td>
+                  <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                </tr>
+                {result.approvedPension > 0 && (
+                  <tr>
+                    <td className="py-2.5 px-3 font-sans text-slate-700">Approved Pension</td>
+                    <td className="py-2.5 px-3 text-right text-rose-700">-{formatJMD(result.approvedPension)}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-400">—</td>
+                  </tr>
+                )}
+                <tr className="bg-emerald-50 font-black text-emerald-950">
+                  <td className="py-3 px-3 font-sans">Net Take-Home Pay</td>
+                  <td className="py-3 px-3 text-right">{formatJMD(result.netPay)}</td>
+                  <td className="py-3 px-3 text-right text-emerald-800">{formatJMD(result.totalEmployerContributions)} ER</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-xs font-bold text-white cursor-pointer"
+            >
+              <Download size={14} />
+              Download Payslip PDF
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

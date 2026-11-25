@@ -210,6 +210,37 @@ export interface WorkspaceInvite {
 
 export type JamaicaTaxYear = '2025' | '2026';
 
+export type PayFrequency = 'Monthly' | 'Fortnightly' | 'Weekly' | 'Annual';
+
+export interface StatutoryCalculationResult {
+  payFrequency: PayFrequency;
+  taxYear: JamaicaTaxYear;
+  periodsPerYear: number;
+  grossPay: number;
+  nisInsurablePay: number;
+  nisCapped: boolean;
+  nisEmployee: number;
+  nisEmployer: number;
+  approvedPension: number;
+  statutoryIncome: number;
+  nhtEmployee: number;
+  nhtEmployer: number;
+  edTaxEmployee: number;
+  edTaxEmployer: number;
+  heartEmployer: number;
+  payeThreshold: number;
+  chargeableIncome: number;
+  payeStandard25: number;
+  payeHigher30: number;
+  paye: number;
+  totalEmployeeStatutory: number;
+  totalEmployeeDeductions: number;
+  netPay: number;
+  totalEmployerContributions: number;
+  totalEmployerCost: number;
+  totalTajRemittance: number;
+}
+
 export interface JamaicaComplianceProfile {
   trn: string;
   nisNumber: string;
@@ -226,6 +257,8 @@ export interface PayrollEmployee {
   nisNumber: string;
   position: string;
   monthlyGross: number;
+  approvedPension?: number;
+  payFrequency?: PayFrequency;
   isPensioner65: boolean;
   status: 'Active' | 'Inactive';
 }
@@ -236,6 +269,7 @@ export interface EmployeePayrollBreakdown {
   trn: string;
   nisNumber: string;
   monthlyGross: number;
+  approvedPension?: number;
   nisEmployee: number;
   nisEmployer: number;
   statutoryIncome: number;

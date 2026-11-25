@@ -2531,8 +2531,31 @@ export const dataService = {
     const employerDebit = round2(run.totals.totalEmployerContributions);
     const totalDebit = round2(grossDebit + employerDebit);
     const statutoryCredit = round2(run.totals.totalS01Remittance);
+    const pensionCredit = round2(
+      run.employees.reduce((sum, emp) => sum + Number(emp.approvedPension || 0), 0)
+    );
     // Ensure penny-exact double-entry balance
-    const cashCredit = round2(totalDebit - statutoryCredit);
+    const cashCredit = round2(totalDebit - statutoryCredit - pensionCredit);
+
+    let pensionLiabilityAccount =
+      pensionCredit > 0
+        ? accounts.find((a) => a.code === "2210") ||
+          accounts.find(
+            (a) =>
+              a.type === "Liability" && a.name.toLowerCase().includes("pension")
+          )
+        : undefined;
+    if (pensionCredit > 0 && !pensionLiabilityAccount) {
+      pensionLiabilityAccount = {
+        id: `ACC-2210-${Date.now()}`,
+        code: "2210",
+        name: "Approved Pension Payable",
+        type: "Liability",
+        balance: 0,
+        description: "Employee approved superannuation / pension withholdings",
+      };
+      dataService.saveAccount(pensionLiabilityAccount);
+    }
 
     const journalEntry: JournalEntry = {
       id: `JE-PAY-${run.period}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`,
@@ -2572,6 +2595,17 @@ export const dataService = {
           credit: statutoryCredit,
           description: `TAJ S01 Remittance Payable (Due ${run.dueDate})`,
         },
+        ...(pensionCredit > 0 && pensionLiabilityAccount
+          ? [
+              {
+                id: `JL-5-${Date.now()}`,
+                account_id: pensionLiabilityAccount.id,
+                debit: 0,
+                credit: pensionCredit,
+                description: `Approved Pension Withholdings (${run.period})`,
+              },
+            ]
+          : []),
       ],
     };
 

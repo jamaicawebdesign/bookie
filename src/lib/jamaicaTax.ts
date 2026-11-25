@@ -1,8 +1,17 @@
 import {
   EmployeePayrollBreakdown,
   JamaicaTaxYear,
+  PayFrequency,
   PayrollEmployee,
+  StatutoryCalculationResult,
 } from '../types';
+
+export const PAY_FREQUENCY_PERIODS: Record<PayFrequency, number> = {
+  Monthly: 12,
+  Fortnightly: 26,
+  Weekly: 52,
+  Annual: 1,
+};
 
 export const JAMAICA_STATUTORY_CONFIG: Record<
   JamaicaTaxYear,
@@ -11,6 +20,7 @@ export const JAMAICA_STATUTORY_CONFIG: Record<
     monthlyThreshold: number;
     annualThreshold: number;
     pensionerExtraAnnual: number;
+    higherBandAnnualThreshold: number;
     higherBandMonthlyChargeable: number;
     nisAnnualCeiling: number;
     nisMonthlyCeiling: number;
@@ -28,6 +38,7 @@ export const JAMAICA_STATUTORY_CONFIG: Record<
     monthlyThreshold: 149948,
     annualThreshold: 1799376,
     pensionerExtraAnnual: 250040,
+    higherBandAnnualThreshold: 6000000,
     higherBandMonthlyChargeable: 500000,
     nisAnnualCeiling: 5000000,
     nisMonthlyCeiling: 416666.67,
@@ -44,6 +55,7 @@ export const JAMAICA_STATUTORY_CONFIG: Record<
     monthlyThreshold: 158530,
     annualThreshold: 1902360,
     pensionerExtraAnnual: 250040,
+    higherBandAnnualThreshold: 6000000,
     higherBandMonthlyChargeable: 500000,
     nisAnnualCeiling: 5000000,
     nisMonthlyCeiling: 416666.67,
@@ -71,79 +83,151 @@ export function formatJMD(amount: number): string {
 }
 
 /**
- * Computes monthly Jamaican statutory payroll deductions in TAJ order:
- * 1. NIS (3% EE / 3% ER capped at J$416,666.67 monthly insurable ceiling)
- * 2. Statutory Income = Gross - NIS Employee
+ * Computes Jamaican statutory payroll deductions (NIS, NHT, Ed Tax, HEART, PAYE)
+ * for Monthly, Fortnightly, Weekly, or Annual pay cycles in TAJ statutory order:
+ * 1. NIS (3% EE / 3% ER capped at J$5,000,000/yr prorated by pay cycle)
+ * 2. Statutory Income = Gross - NIS Employee - Approved Pension
  * 3. NHT (2% EE / 3% ER on full gross)
  * 4. Education Tax (2.25% EE / 3.5% ER on Statutory Income)
  * 5. HEART/NSTA Trust (3% ER on gross unless exempt)
- * 6. PAYE (0% up to threshold, 25% next J$500k/mo chargeable, 30% above)
+ * 6. PAYE (0% up to prorated threshold, 25% standard band, 30% > J$6M/yr chargeable)
  */
-export function calculateEmployeeMonthlyPayroll(
-  employee: PayrollEmployee,
-  taxYear: JamaicaTaxYear,
-  heartExempt = false
-): EmployeePayrollBreakdown {
-  const cfg = JAMAICA_STATUTORY_CONFIG[taxYear];
-  const gross = Math.max(0, Number(employee.monthlyGross) || 0);
+export function calculateStatutoryDeductions(params: {
+  grossPay: number;
+  taxYear: JamaicaTaxYear;
+  payFrequency?: PayFrequency;
+  isPensioner65?: boolean;
+  heartExempt?: boolean;
+  approvedPension?: number;
+}): StatutoryCalculationResult {
+  const payFrequency: PayFrequency = params.payFrequency || 'Monthly';
+  const periodsPerYear = PAY_FREQUENCY_PERIODS[payFrequency];
+  const cfg = JAMAICA_STATUTORY_CONFIG[params.taxYear];
 
-  const nisInsurable = Math.min(gross, cfg.nisMonthlyCeiling);
-  const nisEmployee = employee.isPensioner65 ? 0 : round2(nisInsurable * cfg.nisRate);
-  const nisEmployer = employee.isPensioner65 ? 0 : round2(nisInsurable * cfg.nisRate);
+  const grossPay = round2(Math.max(0, Number(params.grossPay) || 0));
+  const nisPeriodCeiling = round2(cfg.nisAnnualCeiling / periodsPerYear);
+  const nisInsurablePay = round2(Math.min(grossPay, nisPeriodCeiling));
+  const nisCapped = !params.isPensioner65 && grossPay > nisPeriodCeiling;
 
-  const statutoryIncome = Math.max(0, round2(gross - nisEmployee));
+  const nisEmployee = params.isPensioner65
+    ? 0
+    : round2(nisInsurablePay * cfg.nisRate);
+  const nisEmployer = params.isPensioner65
+    ? 0
+    : round2(nisInsurablePay * cfg.nisRate);
 
-  const nhtEmployee = round2(gross * cfg.nhtEmployeeRate);
-  const nhtEmployer = round2(gross * cfg.nhtEmployerRate);
+  // Approved superannuation / pension cannot exceed Gross - NIS
+  const maxPension = Math.max(0, round2(grossPay - nisEmployee));
+  const approvedPension = round2(
+    Math.min(Math.max(0, Number(params.approvedPension) || 0), maxPension)
+  );
+
+  const statutoryIncome = Math.max(
+    0,
+    round2(grossPay - nisEmployee - approvedPension)
+  );
+
+  const nhtEmployee = round2(grossPay * cfg.nhtEmployeeRate);
+  const nhtEmployer = round2(grossPay * cfg.nhtEmployerRate);
 
   const edTaxEmployee = round2(statutoryIncome * cfg.edTaxEmployeeRate);
   const edTaxEmployer = round2(statutoryIncome * cfg.edTaxEmployerRate);
 
-  const heartEmployer = heartExempt ? 0 : round2(gross * cfg.heartEmployerRate);
+  const heartEmployer = params.heartExempt
+    ? 0
+    : round2(grossPay * cfg.heartEmployerRate);
 
-  const pensionerMonthlyRelief = employee.isPensioner65
-    ? cfg.pensionerExtraAnnual / 12
-    : 0;
-  const effectiveThreshold = cfg.monthlyThreshold + pensionerMonthlyRelief;
-  const chargeableIncome = Math.max(0, statutoryIncome - effectiveThreshold);
+  const baseAnnualThreshold =
+    cfg.annualThreshold + (params.isPensioner65 ? cfg.pensionerExtraAnnual : 0);
+  const payeThreshold = round2(baseAnnualThreshold / periodsPerYear);
+  const higherBandThreshold = round2(
+    cfg.higherBandAnnualThreshold / periodsPerYear
+  );
 
-  let paye = 0;
-  if (chargeableIncome > 0) {
-    const standardSlice = Math.min(chargeableIncome, cfg.higherBandMonthlyChargeable);
-    const higherSlice = Math.max(0, chargeableIncome - cfg.higherBandMonthlyChargeable);
-    paye = round2(standardSlice * 0.25 + higherSlice * 0.3);
-  }
+  const chargeableIncome = Math.max(0, round2(statutoryIncome - payeThreshold));
+  const standardSlice = Math.min(chargeableIncome, higherBandThreshold);
+  const higherSlice = Math.max(0, round2(chargeableIncome - higherBandThreshold));
+  const payeStandard25 = round2(standardSlice * 0.25);
+  const payeHigher30 = round2(higherSlice * 0.3);
+  const paye = round2(payeStandard25 + payeHigher30);
 
-  const totalEmployeeDeductions = round2(
+  const totalEmployeeStatutory = round2(
     nisEmployee + nhtEmployee + edTaxEmployee + paye
   );
-  const netPay = round2(Math.max(0, gross - totalEmployeeDeductions));
+  const totalEmployeeDeductions = round2(totalEmployeeStatutory + approvedPension);
+  const netPay = round2(Math.max(0, grossPay - totalEmployeeDeductions));
   const totalEmployerContributions = round2(
     nisEmployer + nhtEmployer + edTaxEmployer + heartEmployer
   );
-  const totalStatutoryRemittance = round2(
-    totalEmployeeDeductions + totalEmployerContributions
+  const totalEmployerCost = round2(grossPay + totalEmployerContributions);
+  const totalTajRemittance = round2(
+    totalEmployeeStatutory + totalEmployerContributions
   );
 
   return {
-    employeeId: employee.id,
-    name: employee.name,
-    trn: employee.trn,
-    nisNumber: employee.nisNumber,
-    monthlyGross: round2(gross),
+    payFrequency,
+    taxYear: params.taxYear,
+    periodsPerYear,
+    grossPay,
+    nisInsurablePay,
+    nisCapped,
     nisEmployee,
     nisEmployer,
+    approvedPension,
     statutoryIncome,
     nhtEmployee,
     nhtEmployer,
     edTaxEmployee,
     edTaxEmployer,
     heartEmployer,
+    payeThreshold,
+    chargeableIncome,
+    payeStandard25,
+    payeHigher30,
     paye,
+    totalEmployeeStatutory,
     totalEmployeeDeductions,
     netPay,
     totalEmployerContributions,
-    totalStatutoryRemittance,
+    totalEmployerCost,
+    totalTajRemittance,
+  };
+}
+
+export function calculateEmployeeMonthlyPayroll(
+  employee: PayrollEmployee,
+  taxYear: JamaicaTaxYear,
+  heartExempt = false
+): EmployeePayrollBreakdown {
+  const result = calculateStatutoryDeductions({
+    grossPay: employee.monthlyGross,
+    taxYear,
+    payFrequency: 'Monthly',
+    isPensioner65: employee.isPensioner65,
+    heartExempt,
+    approvedPension: employee.approvedPension || 0,
+  });
+
+  return {
+    employeeId: employee.id,
+    name: employee.name,
+    trn: employee.trn,
+    nisNumber: employee.nisNumber,
+    monthlyGross: result.grossPay,
+    approvedPension: result.approvedPension,
+    nisEmployee: result.nisEmployee,
+    nisEmployer: result.nisEmployer,
+    statutoryIncome: result.statutoryIncome,
+    nhtEmployee: result.nhtEmployee,
+    nhtEmployer: result.nhtEmployer,
+    edTaxEmployee: result.edTaxEmployee,
+    edTaxEmployer: result.edTaxEmployer,
+    heartEmployer: result.heartEmployer,
+    paye: result.paye,
+    totalEmployeeDeductions: result.totalEmployeeStatutory,
+    netPay: result.netPay,
+    totalEmployerContributions: result.totalEmployerContributions,
+    totalStatutoryRemittance: result.totalTajRemittance,
   };
 }
 

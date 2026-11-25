@@ -36,7 +36,7 @@ interface SidebarProps {
 export function Sidebar({ activePage, onPageChange, onLogout, user }: SidebarProps) {
   const [navSearch, setNavSearch] = useState('');
 
-  const navItems: { icon: any; label: string; id: PageId }[] = [
+  const navItems: { icon: any; label: string; id: PageId; keywords?: string }[] = [
     { icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
     { icon: Users, label: 'Clients', id: 'clients' },
     { icon: FileText, label: 'Invoices', id: 'invoices' },
@@ -48,7 +48,12 @@ export function Sidebar({ activePage, onPageChange, onLogout, user }: SidebarPro
     { icon: ClipboardList, label: 'General Ledger', id: 'ledger' },
     { icon: Scale, label: 'Bank Reconciliation', id: 'reconciliation' },
     { icon: BarChart, label: 'Financial Reports', id: 'reports' },
-    { icon: Landmark, label: 'Jamaica Tax & Payroll', id: 'jamaica-compliance' },
+    {
+      icon: Landmark,
+      label: 'Jamaica Tax & Payroll',
+      id: 'jamaica-compliance',
+      keywords: 'nis nht heart ed tax education tax paye gct 4a s01 s02 p24 taj statutory',
+    },
     { icon: BarChart3, label: 'Analytics', id: 'analytics' },
     { icon: Database, label: 'Data Sources', id: 'data-sources' },
     { icon: Upload, label: 'Data Import', id: 'import' },
@@ -58,9 +63,14 @@ export function Sidebar({ activePage, onPageChange, onLogout, user }: SidebarPro
     { icon: Settings, label: 'Settings', id: 'settings' },
   ];
 
-  const filteredNavItems = navItems.filter((item) =>
-    item.label.toLowerCase().includes(navSearch.trim().toLowerCase())
-  );
+  const filteredNavItems = navItems.filter((item) => {
+    const q = navSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.label.toLowerCase().includes(q) ||
+      Boolean(item.keywords && item.keywords.includes(q))
+    );
+  });
 
   return (
     <aside className="w-64 border-r border-slate-800 bg-slate-900 flex flex-col h-full sticky top-0">
